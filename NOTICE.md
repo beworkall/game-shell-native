@@ -34,3 +34,10 @@ Changes: the in-app game downloader was removed from the launcher; the launcher 
 runtime at a game folder you already have (src/config.rs reads game_dir.txt); added all-files access for
 that folder; render-scale and frame-rate presets in the launcher; new application id; new CI workflow.
 No game files are bundled or hosted by this fork. Original author notices are retained in source.
+
+### v0.2 (2026-10-24)
+Launcher rewritten as a saved-games list with a per-game settings page (render scale, frame rate, texture quality,
+touch speed, mute, mode, multiplayer, control profile). Added import of Winlator input-control profiles (.icp) and a
+renderer for them in GameActivity (buttons, d-pad, stick, trackpad, radial menus, range buttons, toggles, mouse-move
+buttons). Added file verification against the bundled manifest and a log exporter. Default profiles FPS, RTS,
+Virtual Gamepad and Template (12 buttons) were supplied by the user.

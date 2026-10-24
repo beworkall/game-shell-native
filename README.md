@@ -7,6 +7,9 @@ Differences from upstream:
 - Reads the folder in place (all-files access), so there is no second 16 GB copy.
 - Render-scale and FPS-cap presets in the launcher.
 - Own application id (installs next to upstream).
+- Saved games list + per-game settings page (render scale, FPS, texture quality, touch speed, mute, mode, multiplayer).
+- Winlator control profiles: import `.icp` files and pick one per game (FPS, RTS, Virtual Gamepad, Template included).
+- Tools: quick/full file verification against the pinned manifest, and "Export log to Downloads".
 
 ## Build
 Upload this folder to a PRIVATE GitHub repo (keep `.github`) -> Actions -> android-apk -> Run workflow
