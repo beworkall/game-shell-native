@@ -41,3 +41,13 @@ touch speed, mute, mode, multiplayer, control profile). Added import of Winlator
 renderer for them in GameActivity (buttons, d-pad, stick, trackpad, radial menus, range buttons, toggles, mouse-move
 buttons). Added file verification against the bundled manifest and a log exporter. Default profiles FPS, RTS,
 Virtual Gamepad and Template (12 buttons) were supplied by the user.
+
+### v0.3 (2026-10-25)
+First-run setup wizard; saved games with per-game settings; auto-configuration from device RAM/chip and reset;
+a Winlator-style control-layout editor (EditorActivity) and shared profile renderer (ControlView) for .icp files;
+remappable gamepad support with deadzones; an in-game slide menu (resume, restart, exit, HUD, live profile switch,
+mute, graphics apply/restart, clear cache); clear-graphics-and-temp tool; backups of saves and layouts to
+Documents/GTA5NativeData; crash screen; About page; new app icon (original artwork); download links removed from the
+bundled file manifest (hashes and sizes are kept for verification). Rust: two small JNI hooks
+(nativePresents for the FPS counter, nativeMute for live mute; src/android.rs, src/audio.rs).
+Control-profile format and editor ideas were studied from Winlator (LGPL-2.1) by brunodev85; no Winlator code was copied.

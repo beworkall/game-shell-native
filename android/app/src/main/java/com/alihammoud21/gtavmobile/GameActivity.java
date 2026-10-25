@@ -1,18 +1,27 @@
 package com.alihammoud21.gtavmobile;
 
+import android.app.ActivityManager;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.app.NativeActivity;
-import android.os.Bundle;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.*;
+import android.hardware.input.InputManager;
+import android.os.BatteryManager;
+import android.os.Bundle;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.view.*;
-import java.util.*;
+import android.widget.*;
 import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import org.json.JSONArray;
-import org.json.JSONException;
+import java.util.*;
 import org.json.JSONObject;
 
-/** Native renderer plus multitouch controls and standard Android gamepad input. */
+/**
+ * Native renderer plus on-screen controls (Winlator profiles), gamepad input and the in-game slide menu.
+ * Modified for Game Shell Native (GPL-3.0-or-later); see NOTICE.md.
+ */
 public final class GameActivity extends NativeActivity {
     static { System.loadLibrary("gtav_mobile"); }
     private static native void nativeKey(String key, boolean down);
@@ -22,49 +31,158 @@ public final class GameActivity extends NativeActivity {
     private static native boolean nativeInVehicle();
     private static native boolean nativeLoading();
     private static native void nativeHorn(boolean down);
+    private static native long nativePresents();
+    private static native void nativeMute(boolean mute);
+
     private final Map<String, Set<String>> held = new HashMap<>();
     private Controls controls;
-    private Profile profile;
+    private ControlView cv;
+    private View ui;
+    private FrameLayout overlayRoot;
+    private TextView hud, menuButton;
     private android.widget.PopupWindow overlay;
-    private boolean active;
+    private boolean active, muted, touchVisible = true, pendingReload;
     private float lookX, lookY;
+    private int hudMode, gQuality = 1, gFps, gRes;
+    private float uiOpacity = 0.9f;
+    private float padDead = 0.20f, padLook = 1.0f;
+    private JSONObject padMap = new JSONObject();
+    private String profileName = Shell.BUILTIN, padDevice;
+    private long hudT, hudPresents;
+    private float fps;
+    private Dialog menu;
+    private final Map<String, String> analogActive = new HashMap<>();
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    private final ControlView.Host host = new ControlView.Host() {
+        @Override public void key(String source, String code, boolean down) { GameActivity.this.key(source, code, down); }
+        @Override public void release(String source) { GameActivity.this.release(source); }
+        @Override public void look(float dx, float dy) { nativeLook(dx, dy); }
+        @Override public void lookVector(float x, float y) { lookX = x; lookY = y; }
+        @Override public boolean inVehicle() { return nativeInVehicle(); }
+        @Override public boolean loading() { return nativeLoading(); }
+    };
+
     private final Runnable lookTick = new Runnable() {
         @Override public void run() {
             if (!active) return;
-            if (Math.abs(lookX) > .15f || Math.abs(lookY) > .15f) nativeLook(lookX * 12, lookY * 12);
+            if (Math.abs(lookX) > .15f || Math.abs(lookY) > .15f) nativeLook(lookX * 12 * padLook, lookY * 12 * padLook);
             handler.postDelayed(this, 16);
         }
     };
+
+    private final Runnable hudTick = new Runnable() {
+        @Override public void run() {
+            if (!active) return;
+            updateHud();
+            handler.postDelayed(this, 500);
+        }
+    };
+
+    private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
+
+    // ================================================================ lifecycle
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         // Keep Java input dispatch: winit otherwise consumes the native input queue
         // before the touch overlay or gamepad handlers can receive events.
         getWindow().takeInputQueue(null);
-        profile = loadProfile();               // Winlator .icp layout chosen in the launcher
-        if (profile == null) controls = new Controls();   // otherwise the original built-in layout
-        View ui = profile != null ? profile : controls;
+        loadUiConfig();
+        buildOverlay();
+    }
+
+    private void loadUiConfig() {
+        try {
+            String text = Shell.read(new File(getFilesDir(), "ui.json"));
+            JSONObject j = text == null ? new JSONObject() : new JSONObject(text);
+            hudMode = j.optInt("hud", 0);
+            uiOpacity = (float) j.optDouble("opacity", 0.9);
+            padDead = (float) (j.optInt("padDead", 20) / 100.0);
+            padLook = (float) (j.optInt("padLook", 10) / 10.0);
+            muted = j.optBoolean("mute", false);
+            gQuality = j.optInt("quality", 1); gFps = j.optInt("fps", 0); gRes = j.optInt("res", 0);
+            JSONObject m = j.optJSONObject("padmap");
+            padMap = m == null ? new JSONObject() : m;
+        } catch (Exception ignored) { }
+        String name = Shell.read(new File(getFilesDir(), "active_profile.txt"));
+        profileName = name == null || name.trim().isEmpty() ? Shell.BUILTIN : name.trim();
+    }
+
+    private void buildOverlay() {
+        overlayRoot = new FrameLayout(this);
+        ui = buildUi(profileName);
+        overlayRoot.addView(ui, new FrameLayout.LayoutParams(-1, -1));
+        hud = new TextView(this);
+        hud.setTextColor(0xFFFFFFFF); hud.setBackgroundColor(0x88000000); hud.setTextSize(11);
+        hud.setPadding(dp(6), dp(1), dp(6), dp(1)); hud.setVisibility(View.GONE);
+        overlayRoot.addView(hud, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
+        menuButton = new TextView(this);
+        menuButton.setText("\u2630"); menuButton.setTextColor(0xCCFFFFFF); menuButton.setTextSize(20);
+        menuButton.setBackgroundColor(0x44000000); menuButton.setPadding(dp(14), dp(2), dp(14), dp(2));
+        menuButton.setOnClickListener(v -> showMenu());
+        overlayRoot.addView(menuButton, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
         // NativeActivity owns the main surface. Draw controls in their own window.
-        overlay = new android.widget.PopupWindow(ui, -1, -1, false);
+        overlay = new android.widget.PopupWindow(overlayRoot, -1, -1, false);
         overlay.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
         overlay.setClippingEnabled(false);
         overlay.setInputMethodMode(android.widget.PopupWindow.INPUT_METHOD_NOT_NEEDED);
     }
+
+    /** Builds the Winlator profile view, or the original built-in layout when none is selected. */
+    private View buildUi(String name) {
+        controls = null; cv = null;
+        if (name != null && !name.equals(Shell.BUILTIN)) {
+            try {
+                String text = Shell.read(new File(new File(getFilesDir(), "profiles"), name + ".icp"));
+                if (text != null) {
+                    cv = new ControlView(this, new JSONObject(text), host);
+                    cv.setAlpha(Math.max(0.15f, Math.min(1f, uiOpacity)));
+                    return cv;
+                }
+            } catch (Exception ignored) { }
+        }
+        controls = new Controls();
+        return controls;
+    }
+
+    private void swapUi(String name) {
+        if (cv != null) cv.reset();
+        profileName = name;
+        View old = ui;
+        ui = buildUi(name);
+        overlayRoot.addView(ui, 0, new FrameLayout.LayoutParams(-1, -1));
+        if (old != null) overlayRoot.removeView(old);
+        ui.setVisibility(touchVisible ? View.VISIBLE : View.INVISIBLE);
+        try { Shell.write(new File(getFilesDir(), "active_profile.txt"), name); } catch (Exception ignored) { }
+        saveOverride("profile", name);
+    }
+
     @Override protected void onResume() {
         super.onResume(); active = true;
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        if (pendingReload) { pendingReload = false; swapUi(profileName); }
+        try { nativeMute(muted); } catch (Throwable ignored) { }
+        applyHudMode();
         handler.post(lookTick);
+        handler.post(hudTick);
         getWindow().getDecorView().post(() -> {
             if (active && !isFinishing() && !overlay.isShowing()) overlay.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START, 0, 0);
         });
     }
+
     @Override protected void onPause() {
         overlay.dismiss();
-        active = false; handler.removeCallbacks(lookTick); lookX = lookY = 0;
-        held.clear(); if (controls != null) controls.contacts.clear(); if (profile != null) profile.reset(); nativeRelease(); nativeHorn(false);
+        if (menu != null && menu.isShowing()) menu.dismiss();
+        active = false; handler.removeCallbacks(lookTick); handler.removeCallbacks(hudTick); lookX = lookY = 0;
+        held.clear(); analogActive.clear();
+        if (controls != null) controls.contacts.clear();
+        if (cv != null) cv.reset();
+        nativeRelease(); nativeHorn(false);
         super.onPause();
     }
+
+    // ================================================================ key plumbing
     private void key(String source, String key, boolean down) {
         if (!active) return;
         Set<String> owners = held.computeIfAbsent(key, k -> new HashSet<>());
@@ -78,39 +196,79 @@ public final class GameActivity extends NativeActivity {
             else nativeKey(key, after);
         }
     }
+
     private void release(String source) {
         for (String key : new ArrayList<>(held.keySet())) key(source, key, false);
     }
+
     private void stick(String source, float x, float y) {
         key(source, "KeyA", x < -.25f); key(source, "KeyD", x > .25f);
         key(source, "KeyW", y < -.25f); key(source, "KeyS", y > .25f);
     }
+
+    /** Holds a remappable analog/hat/trigger input; releases the old key if the binding changed (e.g. entering a car). */
+    private void analog(String name, String binding, boolean on) {
+        String src = "pad-" + name;
+        String last = analogActive.get(src);
+        String code = on ? Shell.resolve(binding, nativeInVehicle()) : null;
+        if (last != null && (!on || code == null || !last.equals(code))) { key(src, last, false); analogActive.remove(src); last = null; }
+        if (on && code != null && last == null) { key(src, code, true); analogActive.put(src, code); }
+    }
+
+    // ================================================================ gamepad
+    private String padInput(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_BUTTON_A: return "A";
+            case KeyEvent.KEYCODE_BUTTON_B: return "B";
+            case KeyEvent.KEYCODE_BUTTON_X: return "X";
+            case KeyEvent.KEYCODE_BUTTON_Y: return "Y";
+            case KeyEvent.KEYCODE_BUTTON_L1: return "L1";
+            case KeyEvent.KEYCODE_BUTTON_R1: return "R1";
+            case KeyEvent.KEYCODE_BUTTON_L2: return "L2";
+            case KeyEvent.KEYCODE_BUTTON_R2: return "R2";
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: return "L3";
+            case KeyEvent.KEYCODE_BUTTON_THUMBR: return "R3";
+            case KeyEvent.KEYCODE_BUTTON_START: case KeyEvent.KEYCODE_BUTTON_MODE: return "START";
+            case KeyEvent.KEYCODE_BUTTON_SELECT: return "SELECT";
+            case KeyEvent.KEYCODE_DPAD_UP: return "DPAD_UP";
+            case KeyEvent.KEYCODE_DPAD_DOWN: return "DPAD_DOWN";
+            case KeyEvent.KEYCODE_DPAD_LEFT: return "DPAD_LEFT";
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return "DPAD_RIGHT";
+            default: return null;
+        }
+    }
+
+    private String defaultBinding(String input) {
+        if (input.startsWith("DPAD_")) return "GAMEPAD_" + input;
+        return "GAMEPAD_BUTTON_" + input;
+    }
+
+    private String padBinding(String input) { return padMap.optString(input, defaultBinding(input)); }
+
+    private void noticePad(InputEvent event) {
+        InputDevice d = event.getDevice();
+        if (d != null && (padDevice == null || !padDevice.equals(d.getName()))) {
+            padDevice = d.getName();
+            Toast.makeText(this, "Controller: " + padDevice, Toast.LENGTH_SHORT).show();
+        }
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        if ((event.getSource() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD || (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) {
-            String key = switch (event.getKeyCode()) {
-                case KeyEvent.KEYCODE_BUTTON_A -> "Enter";
-                case KeyEvent.KEYCODE_BUTTON_B -> "Backspace";
-                case KeyEvent.KEYCODE_BUTTON_X -> "Space";
-                case KeyEvent.KEYCODE_BUTTON_Y -> "KeyF";
-                case KeyEvent.KEYCODE_BUTTON_L1 -> "Tab";
-                case KeyEvent.KEYCODE_BUTTON_R1 -> "KeyQ";
-                case KeyEvent.KEYCODE_BUTTON_START -> "Escape";
-                case KeyEvent.KEYCODE_BUTTON_SELECT -> "KeyV";
-                case KeyEvent.KEYCODE_BUTTON_THUMBL -> "ControlLeft";
-                case KeyEvent.KEYCODE_BUTTON_THUMBR -> "KeyC";
-                case KeyEvent.KEYCODE_DPAD_UP -> "ArrowUp";
-                case KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown";
-                case KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft";
-                case KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight";
-                default -> null;
-            };
-            if (key != null) {
-                key("pad-key-" + event.getKeyCode(), key, event.getAction() == KeyEvent.ACTION_DOWN);
+        int source = event.getSource();
+        boolean padSource = (source & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD || (source & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK;
+        if (padSource || KeyEvent.isGamepadButton(event.getKeyCode())) {
+            String input = padInput(event.getKeyCode());
+            if (input != null) {
+                noticePad(event);
+                if (input.equals("START") && event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_MODE && event.getAction() == KeyEvent.ACTION_UP) { showMenu(); return true; }
+                boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+                String code = Shell.resolve(padBinding(input), nativeInVehicle());
+                if (code != null) key("pad-key-" + event.getKeyCode(), code, down);
                 return true;
             }
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-            if (event.getAction() == KeyEvent.ACTION_UP) onBackPressed();
+            if (event.getAction() == KeyEvent.ACTION_UP) showMenu();
             return true;
         }
         String keyboard = keyboardKey(event.getKeyCode());
@@ -122,46 +280,232 @@ public final class GameActivity extends NativeActivity {
         // disabled native queue. Activity's KeyEvent callbacks handle volume.
         return event.dispatch(this);
     }
+
     private static String keyboardKey(int code) {
-        if (code >= KeyEvent.KEYCODE_A && code <= KeyEvent.KEYCODE_Z) return "Key" + (char)('A' + code - KeyEvent.KEYCODE_A);
+        if (code >= KeyEvent.KEYCODE_A && code <= KeyEvent.KEYCODE_Z) return "Key" + (char) ('A' + code - KeyEvent.KEYCODE_A);
         if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) return "Digit" + (code - KeyEvent.KEYCODE_0);
-        return switch (code) {
-            case KeyEvent.KEYCODE_ENTER -> "Enter";
-            case KeyEvent.KEYCODE_ESCAPE -> "Escape";
-            case KeyEvent.KEYCODE_SPACE -> "Space";
-            case KeyEvent.KEYCODE_TAB -> "Tab";
-            case KeyEvent.KEYCODE_DEL -> "Backspace";
-            case KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> "ShiftLeft";
-            case KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> "ControlLeft";
-            case KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> "AltLeft";
-            case KeyEvent.KEYCODE_DPAD_UP -> "ArrowUp";
-            case KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown";
-            case KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft";
-            case KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight";
-            default -> null;
-        };
+        if (code >= KeyEvent.KEYCODE_F1 && code <= KeyEvent.KEYCODE_F12) return "F" + (code - KeyEvent.KEYCODE_F1 + 1);
+        switch (code) {
+            case KeyEvent.KEYCODE_ENTER: return "Enter";
+            case KeyEvent.KEYCODE_ESCAPE: return "Escape";
+            case KeyEvent.KEYCODE_SPACE: return "Space";
+            case KeyEvent.KEYCODE_TAB: return "Tab";
+            case KeyEvent.KEYCODE_DEL: return "Backspace";
+            case KeyEvent.KEYCODE_FORWARD_DEL: return "Delete";
+            case KeyEvent.KEYCODE_SHIFT_LEFT: case KeyEvent.KEYCODE_SHIFT_RIGHT: return "ShiftLeft";
+            case KeyEvent.KEYCODE_CTRL_LEFT: case KeyEvent.KEYCODE_CTRL_RIGHT: return "ControlLeft";
+            case KeyEvent.KEYCODE_ALT_LEFT: case KeyEvent.KEYCODE_ALT_RIGHT: return "AltLeft";
+            case KeyEvent.KEYCODE_DPAD_UP: return "ArrowUp";
+            case KeyEvent.KEYCODE_DPAD_DOWN: return "ArrowDown";
+            case KeyEvent.KEYCODE_DPAD_LEFT: return "ArrowLeft";
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return "ArrowRight";
+            default: return null;
+        }
     }
+
+    private float dead(float v) {
+        float a = Math.abs(v);
+        if (a < padDead) return 0f;
+        return Math.signum(v) * (a - padDead) / (1f - padDead);
+    }
+
     @Override public boolean onGenericMotionEvent(MotionEvent event) {
         if ((event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) {
-            stick("pad-stick", event.getAxisValue(MotionEvent.AXIS_X), event.getAxisValue(MotionEvent.AXIS_Y));
-            lookX = event.getAxisValue(MotionEvent.AXIS_Z); lookY = event.getAxisValue(MotionEvent.AXIS_RZ);
+            noticePad(event);
+            float lx = event.getAxisValue(MotionEvent.AXIS_X), ly = event.getAxisValue(MotionEvent.AXIS_Y);
+            boolean mag = Math.hypot(lx, ly) > Math.max(0.25f, padDead);
+            key("pad-stick", "KeyA", mag && lx < -.35f); key("pad-stick", "KeyD", mag && lx > .35f);
+            key("pad-stick", "KeyW", mag && ly < -.35f); key("pad-stick", "KeyS", mag && ly > .35f);
+            // right stick: Z/RZ on most pads, RX/RY on some
+            float rx = event.getAxisValue(MotionEvent.AXIS_Z), ry = event.getAxisValue(MotionEvent.AXIS_RZ);
+            if (rx == 0f && ry == 0f) { rx = event.getAxisValue(MotionEvent.AXIS_RX); ry = event.getAxisValue(MotionEvent.AXIS_RY); }
+            lookX = dead(rx); lookY = dead(ry);
             float rt = Math.max(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS));
             float lt = Math.max(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE));
-            boolean car = nativeInVehicle();
-            key("pad-trigger", "Fire", !car && rt > .2f); key("pad-trigger", "Aim", !car && lt > .2f);
-            key("pad-trigger", "KeyW", car && rt > .2f); key("pad-trigger", "KeyS", car && lt > .2f);
+            analog("R2", padBinding("R2"), rt > .2f);
+            analog("L2", padBinding("L2"), lt > .2f);
             float hx = event.getAxisValue(MotionEvent.AXIS_HAT_X), hy = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
-            key("pad-hat", "ArrowLeft", hx < -.5f); key("pad-hat", "ArrowRight", hx > .5f);
-            key("pad-hat", "ArrowUp", hy < -.5f); key("pad-hat", "ArrowDown", hy > .5f);
+            analog("DPAD_LEFT", padBinding("DPAD_LEFT"), hx < -.5f); analog("DPAD_RIGHT", padBinding("DPAD_RIGHT"), hx > .5f);
+            analog("DPAD_UP", padBinding("DPAD_UP"), hy < -.5f); analog("DPAD_DOWN", padBinding("DPAD_DOWN"), hy > .5f);
             return true;
         }
         return super.onGenericMotionEvent(event);
     }
-    @Override public void onBackPressed() {
-        new android.app.AlertDialog.Builder(this).setMessage("Leave the game?")
-            .setNegativeButton("Stay", null).setPositiveButton("Leave", (d, w) -> finish()).show();
+
+    // ================================================================ HUD
+    private void applyHudMode() {
+        hud.setVisibility(hudMode == 0 ? View.GONE : View.VISIBLE);
+        hudT = 0;
+        updateHud();
     }
 
+    private void updateHud() {
+        if (hudMode == 0) return;
+        long now = SystemClock.elapsedRealtime();
+        try {
+            long presents = nativePresents();
+            if (hudT != 0 && now > hudT) fps = (presents - hudPresents) * 1000f / (now - hudT);
+            hudT = now; hudPresents = presents;
+        } catch (Throwable t) { fps = -1; }
+        StringBuilder sb = new StringBuilder();
+        sb.append(fps < 0 ? "FPS ?" : String.format(Locale.US, "%.0f FPS", fps));
+        if (hudMode >= 2) {
+            Intent b = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (b != null) {
+                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1), scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+                float temp = b.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10f;
+                sb.append(String.format(Locale.US, "  |  batt %d%% %.1f\u00B0C", level * 100 / Math.max(1, scale), temp));
+            }
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo(); am.getMemoryInfo(mi);
+            sb.append(String.format(Locale.US, "  |  RAM free %.1f GB", mi.availMem / 1e9));
+            try {
+                int th = getSystemService(PowerManager.class).getCurrentThermalStatus();
+                String[] names = {"cool", "light", "moderate", "SEVERE", "CRITICAL", "EMERGENCY", "SHUTDOWN"};
+                sb.append("  |  thermal ").append(names[Math.max(0, Math.min(names.length - 1, th))]);
+            } catch (Throwable ignored) { }
+        }
+        hud.setText(sb.toString());
+    }
+
+    // ================================================================ in-game slide menu
+    private void saveOverride(String key, Object value) {
+        try {
+            File f = new File(getFilesDir(), "overrides.json");
+            String text = Shell.read(f);
+            JSONObject j = text == null ? new JSONObject() : new JSONObject(text);
+            j.put(key, value);
+            Shell.write(f, j.toString());
+        } catch (Exception ignored) { }
+    }
+
+    private void restart() {
+        Intent i = new Intent(this, LauncherActivity.class).putExtra("autoplay", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(i);
+        finish();
+        handler.postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 700);
+    }
+
+    private void exitGame() {
+        finish();
+        handler.postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 700);
+    }
+
+    @Override public void onBackPressed() { showMenu(); }
+
+    private Button menuButton(LinearLayout col, String label, Runnable action) {
+        Button b = new Button(this); b.setText(label); b.setAllCaps(false);
+        b.setOnClickListener(v -> action.run()); col.addView(b); return b;
+    }
+
+    private TextView menuHeading(LinearLayout col, String label) {
+        TextView t = new TextView(this); t.setText(label); t.setTextSize(13); t.setTextColor(0xFF8FB3FF); t.setPadding(0, dp(12), 0, dp(2)); col.addView(t); return t;
+    }
+
+    private void showMenu() {
+        if (menu != null && menu.isShowing()) { menu.dismiss(); return; }
+        final Dialog d = new Dialog(this, R.style.SlideMenu);
+        menu = d;
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL); col.setPadding(dp(16), dp(16), dp(16), dp(16));
+        TextView title = new TextView(this); title.setText("Game menu"); title.setTextSize(22); title.setTextColor(0xFFFFFFFF); col.addView(title);
+
+        menuButton(col, "Resume", d::dismiss);
+        menuButton(col, "Restart game", () -> new AlertDialog.Builder(this).setMessage("Restart the game? Unsaved progress is lost.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Restart", (x, w) -> restart()).show());
+        menuButton(col, "Exit game", () -> new AlertDialog.Builder(this).setMessage("Exit the game? Unsaved progress is lost.")
+            .setNegativeButton("Stay", null).setPositiveButton("Exit", (x, w) -> exitGame()).show());
+
+        menuHeading(col, "On-screen HUD");
+        final Spinner hudSpin = new Spinner(this);
+        hudSpin.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"Off", "FPS", "Detailed (FPS, battery, RAM, thermal)"}));
+        hudSpin.setSelection(hudMode);
+        hudSpin.setOnItemSelectedListener(new SimpleSelect(pos -> { if (pos != hudMode) { hudMode = pos; saveOverride("hud", pos); applyHudMode(); } }));
+        col.addView(hudSpin);
+
+        menuHeading(col, "Controls");
+        final Switch show = new Switch(this); show.setText("Show touch controls"); show.setChecked(touchVisible);
+        show.setOnCheckedChangeListener((b, on) -> { touchVisible = on; ui.setVisibility(on ? View.VISIBLE : View.INVISIBLE); });
+        col.addView(show);
+        final List<String> names = Shell.listProfiles(this);
+        String[] shown = new String[names.size()];
+        for (int i = 0; i < shown.length; i++) shown[i] = names.get(i).equals(Shell.BUILTIN) ? "Built-in (original)" : names.get(i);
+        final Spinner prof = new Spinner(this);
+        prof.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, shown));
+        prof.setSelection(Math.max(0, names.indexOf(profileName)));
+        prof.setOnItemSelectedListener(new SimpleSelect(pos -> { if (!names.get(pos).equals(profileName)) swapUi(names.get(pos)); }));
+        col.addView(prof);
+        menuButton(col, "Edit this layout", () -> {
+            if (profileName.equals(Shell.BUILTIN)) { Toast.makeText(this, "Pick a profile first.", Toast.LENGTH_SHORT).show(); return; }
+            pendingReload = true; d.dismiss();
+            startActivity(new Intent(this, EditorActivity.class).putExtra("profile", profileName));
+        });
+        TextView op = new TextView(this); op.setText("Controls opacity"); op.setTextColor(0xFFFFFFFF); col.addView(op);
+        SeekBar opacity = new SeekBar(this); opacity.setMax(85); opacity.setProgress(Math.round(uiOpacity * 100) - 15);
+        opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean user) {
+                uiOpacity = (p + 15) / 100f; if (ui != null) ui.setAlpha(uiOpacity); saveOverride("opacity", uiOpacity);
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) { }
+            @Override public void onStopTrackingTouch(SeekBar s) { }
+        });
+        col.addView(opacity);
+
+        menuHeading(col, "Sound");
+        final Switch mute = new Switch(this); mute.setText("Mute"); mute.setChecked(muted);
+        mute.setOnCheckedChangeListener((b, on) -> { muted = on; try { nativeMute(on); } catch (Throwable ignored) { } saveOverride("mute", on); });
+        col.addView(mute);
+
+        menuHeading(col, "Graphics (needs a restart)");
+        final Spinner scale = new Spinner(this);
+        scale.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Shell.QUALITY_NAMES));
+        scale.setSelection(gQuality);
+        col.addView(scale);
+        final Spinner cap = new Spinner(this);
+        cap.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Shell.FPS_NAMES));
+        cap.setSelection(gFps);
+        col.addView(cap);
+        final Spinner res = new Spinner(this);
+        res.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Shell.RES_NAMES));
+        res.setSelection(gRes);
+        col.addView(res);
+        menuButton(col, "Apply graphics and restart", () -> {
+            saveOverride("quality", scale.getSelectedItemPosition()); saveOverride("fps", cap.getSelectedItemPosition()); saveOverride("res", res.getSelectedItemPosition());
+            restart();
+        });
+        menuButton(col, "Clear graphics cache and restart", () -> new AlertDialog.Builder(this)
+            .setMessage("Delete the compile cache and temp files? Saves are kept. The next launch takes several minutes.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Clear", (x, w) -> { Shell.clearGraphicsAndTemp(this); restart(); }).show());
+
+        menuHeading(col, "Controller");
+        TextView pad = new TextView(this); pad.setTextColor(0xFFCCCCCC);
+        pad.setText(padDevice == null ? "No controller input yet. Connect one by USB or Bluetooth and press a button." : "Connected: " + padDevice);
+        col.addView(pad);
+
+        ScrollView sv = new ScrollView(this); sv.addView(col);
+        d.setContentView(sv);
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setGravity(Gravity.END);
+            w.setLayout(dp(330), ViewGroup.LayoutParams.MATCH_PARENT);
+            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
+        d.show();
+    }
+
+    /** Spinner listener that ignores the automatic first call. */
+    private static final class SimpleSelect implements AdapterView.OnItemSelectedListener {
+        interface Pick { void on(int position); }
+        private final Pick pick; private boolean first = true;
+        SimpleSelect(Pick pick) { this.pick = pick; }
+        @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+            if (first) { first = false; return; }
+            pick.on(position);
+        }
+        @Override public void onNothingSelected(AdapterView<?> parent) { }
+    }
+
+    // ================================================================ original built-in layout (fallback)
     private final class Controls extends View {
         final Map<Integer, Contact> contacts = new HashMap<>();
         final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -227,402 +571,5 @@ public final class GameActivity extends NativeActivity {
     private static final class Contact {
         float x, y; boolean move; String action;
         Contact(float x, float y) { this.x = x; this.y = y; }
-    }
-
-    // ===================================================================
-    // Winlator .icp control profiles (Game Shell Native addition)
-    // ===================================================================
-    private Profile loadProfile() {
-        try {
-            String name = new String(Files.readAllBytes(new File(getFilesDir(), "active_profile.txt").toPath()), StandardCharsets.UTF_8).trim();
-            if (name.isEmpty() || name.equals("builtin")) return null;
-            File f = new File(new File(getFilesDir(), "profiles"), name + ".icp");
-            return new Profile(new JSONObject(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8)));
-        } catch (Exception e) { return null; }
-    }
-
-    private static final int R_NONE = 0, R_LOOK = 1, R_BTN = 2, R_DIR = 3, R_TRACK = 4, R_RANGE = 5;
-
-    private static final class El {
-        String type, shape, text, range;
-        final String[] bind = new String[4];
-        float scale = 1, x, y, cx, cy, r, w, h, kx, ky;
-        boolean toggle, mouseMove, on, open, pressed;
-        final boolean[] dir = new boolean[4];
-        int off;
-    }
-
-    private static final class Touch {
-        El el; int role; float lx, ly, sx, sy; boolean moved; float acc; String src;
-    }
-
-    private final class Profile extends View {
-        final List<El> els = new ArrayList<>();
-        final Map<Integer, Touch> touches = new HashMap<>();
-        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        final float cursor;
-        int laidOutWidth = -1, laidOutHeight = -1;
-
-        Profile(JSONObject json) throws JSONException {
-            super(GameActivity.this);
-            setFocusable(false);
-            cursor = (float) json.optDouble("cursorSpeed", 1.0);
-            JSONArray a = json.getJSONArray("elements");
-            for (int i = 0; i < a.length(); i++) {
-                JSONObject o = a.getJSONObject(i);
-                El e = new El();
-                e.type = o.optString("type"); e.shape = o.optString("shape", "CIRCLE");
-                e.text = o.optString("text", ""); e.range = o.optString("range", "");
-                JSONArray b = o.optJSONArray("bindings");
-                for (int k = 0; k < 4; k++) e.bind[k] = b != null && k < b.length() ? b.optString(k, "NONE") : "NONE";
-                e.scale = (float) o.optDouble("scale", 1); e.x = (float) o.optDouble("x", .5); e.y = (float) o.optDouble("y", .5);
-                e.toggle = o.optBoolean("toggleSwitch"); e.mouseMove = o.optBoolean("mouseMoveMode");
-                els.add(e);
-            }
-        }
-
-        // ---- geometry (sizes follow Winlator: snap = max(width, height) / 100) ----
-        void layoutAll() {
-            float W = getWidth(), H = getHeight(), snap = Math.max(W, H) / 100f;
-            for (El e : els) {
-                e.cx = e.x * W; e.cy = e.y * H; e.w = e.h = e.r = 0;
-                switch (e.type) {
-                    case "D_PAD": e.r = 7 * snap * e.scale; break;
-                    case "STICK": case "TRACKPAD": e.r = 6 * snap * e.scale; break;
-                    case "RADIAL_MENU": e.r = 3 * snap * e.scale; break;
-                    case "RANGE_BUTTON": e.w = 16 * snap * e.scale; e.h = 4 * snap * e.scale; break;
-                    default:
-                        if (e.shape.equals("RECT") || e.shape.equals("ROUND_RECT")) { e.w = 8 * snap * e.scale; e.h = 4 * snap * e.scale; }
-                        else if (e.shape.equals("SQUARE")) { e.w = e.h = 6 * snap * e.scale; }
-                        else e.r = 3 * snap * e.scale;
-                }
-            }
-            laidOutWidth = getWidth(); laidOutHeight = getHeight();
-        }
-
-        float dist(float x, float y, El e) { return (float) Math.hypot(x - e.cx, y - e.cy); }
-
-        boolean hit(El e, float x, float y) {
-            switch (e.type) {
-                case "D_PAD": return Math.abs(x - e.cx) <= e.r && Math.abs(y - e.cy) <= e.r;
-                case "STICK": case "TRACKPAD": return dist(x, y, e) <= e.r;
-                case "RADIAL_MENU": return dist(x, y, e) <= (e.open ? e.r * 7f / 3f : e.r);
-                case "RANGE_BUTTON": return Math.abs(x - e.cx) <= e.w / 2 && Math.abs(y - e.cy) <= e.h / 2;
-                default:
-                    if (e.w > 0) return Math.abs(x - e.cx) <= e.w / 2 && Math.abs(y - e.cy) <= e.h / 2;
-                    return dist(x, y, e) <= e.r;
-            }
-        }
-
-        // ---- binding -> engine key names ----
-        String resolve(String b) {
-            if (b == null || b.equals("NONE")) return null;
-            boolean car = nativeInVehicle();
-            switch (b) {
-                case "MOUSE_LEFT_BUTTON": return "Fire";
-                case "MOUSE_RIGHT_BUTTON": return "Aim";
-                case "GAMEPAD_BUTTON_R2": return car ? "KeyW" : "Fire";
-                case "GAMEPAD_BUTTON_L2": return car ? "KeyS" : "Aim";
-                case "GAMEPAD_BUTTON_A": return "Enter";
-                case "GAMEPAD_BUTTON_B": return "Backspace";
-                case "GAMEPAD_BUTTON_X": return "Space";
-                case "GAMEPAD_BUTTON_Y": return "KeyF";
-                case "GAMEPAD_BUTTON_L1": return "Tab";
-                case "GAMEPAD_BUTTON_R1": return "KeyQ";
-                case "GAMEPAD_BUTTON_START": return "Escape";
-                case "GAMEPAD_BUTTON_SELECT": return "KeyV";
-                case "GAMEPAD_BUTTON_L3": return "ControlLeft";
-                case "GAMEPAD_BUTTON_R3": return "KeyC";
-                case "GAMEPAD_DPAD_UP": return "ArrowUp";
-                case "GAMEPAD_DPAD_DOWN": return "ArrowDown";
-                case "GAMEPAD_DPAD_LEFT": return "ArrowLeft";
-                case "GAMEPAD_DPAD_RIGHT": return "ArrowRight";
-                case "GAMEPAD_LEFT_THUMB_UP": return "KeyW";
-                case "GAMEPAD_LEFT_THUMB_DOWN": return "KeyS";
-                case "GAMEPAD_LEFT_THUMB_LEFT": return "KeyA";
-                case "GAMEPAD_LEFT_THUMB_RIGHT": return "KeyD";
-                default: break;
-            }
-            if (b.startsWith("KEY_")) {
-                String k = b.substring(4);
-                if (k.length() == 1 && Character.isLetter(k.charAt(0))) return "Key" + k.toUpperCase(Locale.US);
-                if (k.length() == 1 && Character.isDigit(k.charAt(0))) return "Digit" + k;
-                switch (k) {
-                    case "ALT_L": return "AltLeft";
-                    case "BKSP": return "Backspace";
-                    case "CTRL_L": return "ControlLeft";
-                    case "DEL": return "Delete";
-                    case "ENTER": return "Enter";
-                    case "ESC": return "Escape";
-                    case "SHIFT_L": return "ShiftLeft";
-                    case "SPACE": return "Space";
-                    case "TAB": return "Tab";
-                    case "UP": return "ArrowUp";
-                    case "DOWN": return "ArrowDown";
-                    case "LEFT": return "ArrowLeft";
-                    case "RIGHT": return "ArrowRight";
-                    default: return null;
-                }
-            }
-            return null;
-        }
-
-        String shortName(String b) {
-            if (b == null || b.equals("NONE")) return "";
-            switch (b) {
-                case "MOUSE_LEFT_BUTTON": return "MLB";
-                case "MOUSE_RIGHT_BUTTON": return "MRB";
-                case "KEY_SHIFT_L": return "L SHIFT";
-                case "KEY_CTRL_L": return "L CTRL";
-                case "KEY_ALT_L": return "L ALT";
-                case "KEY_BKSP": return "BKSP";
-                case "KEY_UP": return "\u25B2"; case "KEY_DOWN": return "\u25BC";
-                case "KEY_LEFT": return "\u25C0"; case "KEY_RIGHT": return "\u25B6";
-                case "GAMEPAD_DPAD_UP": return "\u25B2"; case "GAMEPAD_DPAD_DOWN": return "\u25BC";
-                case "GAMEPAD_DPAD_LEFT": return "\u25C0"; case "GAMEPAD_DPAD_RIGHT": return "\u25B6";
-                default: break;
-            }
-            if (b.startsWith("KEY_")) return b.substring(4);
-            if (b.startsWith("GAMEPAD_BUTTON_")) return b.substring(15);
-            return b;
-        }
-
-        void apply(El e, String src, boolean down) {
-            for (String b : e.bind) { String code = resolve(b); if (code != null) key(src, code, down); }
-        }
-
-        void tap(String code) {
-            final String src = "tap-" + code;
-            key(src, code, true);
-            handler.postDelayed(() -> key(src, code, false), 70);
-        }
-
-        // ---- touch ----
-        @Override public boolean onTouchEvent(MotionEvent ev) {
-            if (laidOutWidth != getWidth() || laidOutHeight != getHeight()) layoutAll();
-            int action = ev.getActionMasked(), index = ev.getActionIndex();
-            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-                down(ev.getPointerId(index), ev.getX(index), ev.getY(index));
-            } else if (action == MotionEvent.ACTION_MOVE) {
-                for (int i = 0; i < ev.getPointerCount(); i++) move(ev.getPointerId(i), ev.getX(i), ev.getY(i));
-            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
-                up(ev.getPointerId(index), ev.getX(index));
-                performClick();
-            } else if (action == MotionEvent.ACTION_CANCEL) {
-                reset();
-            }
-            invalidate();
-            return true;
-        }
-        @Override public boolean performClick() { super.performClick(); return true; }
-
-        void down(int id, float x, float y) {
-            Touch t = new Touch();
-            t.src = "pt-" + id; t.sx = t.lx = x; t.sy = t.ly = y;
-            touches.put(id, t);
-            for (El e : els) if (e.open) { radialTouch(e, x, y); return; }   // an open radial menu takes the tap first
-            El hit = null;
-            for (int i = els.size() - 1; i >= 0; i--) if (hit(els.get(i), x, y)) { hit = els.get(i); break; }
-            if (hit == null) { t.role = R_LOOK; return; }
-            t.el = hit;
-            switch (hit.type) {
-                case "D_PAD": case "STICK": t.role = R_DIR; dir(t, x, y); break;
-                case "TRACKPAD": t.role = R_TRACK; break;
-                case "RADIAL_MENU": hit.open = true; t.role = R_NONE; break;
-                case "RANGE_BUTTON": t.role = R_RANGE; break;
-                default:
-                    t.role = R_BTN;
-                    if (hit.toggle) { hit.on = !hit.on; apply(hit, "tog-" + els.indexOf(hit), hit.on); }
-                    else { hit.pressed = true; apply(hit, t.src, true); }
-            }
-        }
-
-        void radialTouch(El e, float x, float y) {
-            float R = e.r * 7f / 3f, d = dist(x, y, e);
-            e.open = false;
-            if (d > R || d <= R * 0.3f) return;                       // outside or centre cross closes it
-            List<String> codes = new ArrayList<>();
-            for (String b : e.bind) { String c = resolve(b); if (c != null) codes.add(c); }
-            if (codes.isEmpty()) return;
-            double ang = Math.toDegrees(Math.atan2(y - e.cy, x - e.cx));   // -180..180, 0 = right
-            double start = -90.0 + 180.0 / codes.size();                    // first sector centre (-54 deg for 5)
-            double rel = ((ang - start) % 360 + 360 + 180.0 / codes.size()) % 360;
-            int idx = (int) (rel / (360.0 / codes.size()));
-            if (idx >= 0 && idx < codes.size()) tap(codes.get(idx));
-        }
-
-        void dir(Touch t, float x, float y) {
-            El e = t.el;
-            float dx = x - e.cx, dy = y - e.cy, th = e.r * 0.28f;
-            boolean[] want = {dy < -th, dx > th, dy > th, dx < -th};
-            for (int k = 0; k < 4; k++) {
-                if (want[k] != e.dir[k]) {
-                    e.dir[k] = want[k];
-                    String code = resolve(e.bind[k]);
-                    if (code != null) key(t.src, code, want[k]);
-                }
-            }
-            e.kx = Math.max(-1f, Math.min(1f, dx / e.r)); e.ky = Math.max(-1f, Math.min(1f, dy / e.r));
-        }
-
-        void move(int id, float x, float y) {
-            Touch t = touches.get(id);
-            if (t == null) return;
-            switch (t.role) {
-                case R_LOOK:
-                    nativeLook((x - t.lx) * 2 * cursor, (y - t.ly) * 2 * cursor); t.lx = x; t.ly = y; break;
-                case R_BTN:
-                    if (t.el.mouseMove) { nativeLook((x - t.lx) * 2 * cursor, (y - t.ly) * 2 * cursor); t.lx = x; t.ly = y; }
-                    break;
-                case R_DIR: dir(t, x, y); break;
-                case R_TRACK:
-                    lookX = Math.max(-1f, Math.min(1f, (x - t.sx) / t.el.r)); lookY = Math.max(-1f, Math.min(1f, (y - t.sy) / t.el.r));
-                    t.el.kx = lookX; t.el.ky = lookY; break;
-                case R_RANGE: {
-                    t.acc += x - t.lx; t.lx = x;
-                    float step = t.el.w / 4f * 0.7f;
-                    if (Math.abs(t.acc) > step) {
-                        t.moved = true;
-                        int max = rangeLabels(t.el).length - 4;
-                        t.el.off = Math.max(0, Math.min(max, t.el.off - (t.acc > 0 ? 1 : -1)));
-                        t.acc = 0;
-                    }
-                    break;
-                }
-                default: break;
-            }
-        }
-
-        void up(int id, float x) {
-            Touch t = touches.remove(id);
-            if (t == null) return;
-            if (t.role == R_RANGE && !t.moved) {
-                El e = t.el;
-                int cell = (int) Math.max(0, Math.min(3, Math.floor((x - (e.cx - e.w / 2)) / (e.w / 4f))));
-                String[] codes = rangeCodes(e);
-                if (e.off + cell < codes.length) tap(codes[e.off + cell]);
-            }
-            releaseTouch(t);
-        }
-
-        void releaseTouch(Touch t) {
-            release(t.src);
-            if (t.el != null) {
-                t.el.pressed = false;
-                if (t.role == R_DIR) { Arrays.fill(t.el.dir, false); t.el.kx = t.el.ky = 0; }
-                if (t.role == R_TRACK) { lookX = lookY = 0; t.el.kx = t.el.ky = 0; }
-            }
-        }
-
-        void reset() {
-            for (Touch t : new ArrayList<>(touches.values())) releaseTouch(t);
-            touches.clear();
-            for (int i = 0; i < els.size(); i++) {
-                El e = els.get(i);
-                if (e.on) apply(e, "tog-" + i, false);
-                e.on = false; e.open = false; e.pressed = false;
-                Arrays.fill(e.dir, false); e.kx = e.ky = 0;
-            }
-            lookX = lookY = 0;
-        }
-
-        // ---- range buttons ----
-        String[] rangeLabels(El e) {
-            if (e.range.equals("FROM_F1_TO_F12")) {
-                String[] a = new String[12]; for (int i = 0; i < 12; i++) a[i] = "F" + (i + 1); return a;
-            }
-            return new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"};
-        }
-        String[] rangeCodes(El e) {
-            String[] l = rangeLabels(e), c = new String[l.length];
-            for (int i = 0; i < l.length; i++) c[i] = e.range.equals("FROM_F1_TO_F12") ? l[i] : "Digit" + l[i];
-            return c;
-        }
-
-        // ---- drawing ----
-        void body(Canvas c, El e, boolean active) {
-            p.setStyle(Paint.Style.FILL); p.setColor(active ? 0x6678FF9A : 0x14FFFFFF);
-            drawBody(c, e);
-            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(Math.max(2f, getWidth() / 600f)); p.setColor(0xB4D2D2D2);
-            drawBody(c, e);
-            p.setStyle(Paint.Style.FILL);
-        }
-        void drawBody(Canvas c, El e) {
-            if (e.w > 0) {
-                float rr = e.shape.equals("ROUND_RECT") ? e.h / 2f : e.shape.equals("SQUARE") ? e.w * .12f : e.w * .03f;
-                c.drawRoundRect(new RectF(e.cx - e.w / 2, e.cy - e.h / 2, e.cx + e.w / 2, e.cy + e.h / 2), rr, rr, p);
-            } else c.drawCircle(e.cx, e.cy, e.r, p);
-        }
-        void label(Canvas c, String s, float cx, float cy, float size, float maxWidth) {
-            p.setStyle(Paint.Style.FILL); p.setColor(0xFFEEEEEE); p.setTextAlign(Paint.Align.CENTER); p.setTextSize(size);
-            float w = p.measureText(s);
-            if (w > maxWidth && w > 0) p.setTextSize(size * maxWidth / w);
-            c.drawText(s, cx, cy + p.getTextSize() / 3f, p);
-        }
-
-        @Override protected void onDraw(Canvas c) {
-            if (laidOutWidth != getWidth() || laidOutHeight != getHeight()) layoutAll();
-            for (El e : els) {
-                switch (e.type) {
-                    case "D_PAD": {
-                        float R = e.r, a = R * 0.62f;
-                        float[][] cells = {{0, -R + a / 2}, {R - a / 2, 0}, {0, R - a / 2}, {-R + a / 2, 0}};
-                        String[] arrows = {"\u25B2", "\u25B6", "\u25BC", "\u25C0"};
-                        for (int k = 0; k < 4; k++) {
-                            El cell = new El(); cell.shape = "SQUARE"; cell.cx = e.cx + cells[k][0]; cell.cy = e.cy + cells[k][1]; cell.w = cell.h = a;
-                            body(c, cell, e.dir[k]);
-                            label(c, arrows[k], cell.cx, cell.cy, a * 0.5f, a);
-                        }
-                        break;
-                    }
-                    case "STICK": case "TRACKPAD": {
-                        body(c, e, false);
-                        p.setStyle(Paint.Style.FILL); p.setColor(0x66FFFFFF);
-                        c.drawCircle(e.cx + e.kx * e.r * 0.5f, e.cy + e.ky * e.r * 0.5f, e.r * 0.38f, p);
-                        if (e.type.equals("TRACKPAD")) label(c, "LOOK", e.cx, e.cy, e.r * 0.3f, e.r * 1.2f);
-                        break;
-                    }
-                    case "RADIAL_MENU": {
-                        if (!e.open) { body(c, e, false); label(c, "\u2731", e.cx, e.cy, e.r * 0.8f, e.r * 1.4f); break; }
-                        float R = e.r * 7f / 3f;
-                        p.setStyle(Paint.Style.FILL); p.setColor(0x990A1E32); c.drawCircle(e.cx, e.cy, R, p);
-                        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(6f); p.setColor(0xCC2878C8); c.drawCircle(e.cx, e.cy, R, p);
-                        List<String> names = new ArrayList<>();
-                        for (String b : e.bind) if (resolve(b) != null) names.add(shortName(b));
-                        for (int k = 0; k < names.size(); k++) {
-                            double ang = Math.toRadians(-90.0 + 180.0 / names.size() + k * 360.0 / names.size());
-                            El s = new El(); s.cx = e.cx + (float) Math.cos(ang) * R * 0.66f; s.cy = e.cy + (float) Math.sin(ang) * R * 0.66f; s.r = R * 0.26f;
-                            body(c, s, false); label(c, names.get(k), s.cx, s.cy, s.r * 0.9f, s.r * 1.6f);
-                        }
-                        El x = new El(); x.cx = e.cx; x.cy = e.cy; x.r = R * 0.26f; body(c, x, false);
-                        label(c, "\u2715", e.cx, e.cy, x.r, x.r * 1.4f);
-                        break;
-                    }
-                    case "RANGE_BUTTON": {
-                        body(c, e, false);
-                        String[] labels = rangeLabels(e);
-                        for (int k = 0; k < 4; k++) {
-                            float cx = e.cx - e.w / 2 + e.w / 8f + k * e.w / 4f;
-                            if (e.off + k < labels.length) label(c, labels[e.off + k], cx, e.cy, e.h * 0.5f, e.w / 4f);
-                            if (k > 0) { p.setStyle(Paint.Style.STROKE); p.setColor(0x88D2D2D2); c.drawLine(cx - e.w / 8f, e.cy - e.h / 2, cx - e.w / 8f, e.cy + e.h / 2, p); }
-                        }
-                        break;
-                    }
-                    default: {
-                        body(c, e, e.on || e.pressed);
-                        String s = !e.text.isEmpty() ? e.text : shortName(e.bind[0]);
-                        float size = (e.w > 0 ? e.h : e.r) * 0.5f;
-                        label(c, s, e.cx, e.cy, size, (e.w > 0 ? e.w : e.r * 2f) * 0.86f);
-                    }
-                }
-            }
-            if (nativeLoading()) {
-                p.setStyle(Paint.Style.FILL); p.setColor(0xEE141815);
-                c.drawRoundRect(new RectF(getWidth() * .2f, getHeight() * .35f, getWidth() * .8f, getHeight() * .6f), 20, 20, p);
-                label(c, "Preparing your game\u2026", getWidth() / 2f, getHeight() * .45f, getHeight() * .06f, getWidth() * .55f);
-                label(c, "First launch can take several minutes.", getWidth() / 2f, getHeight() * .53f, getHeight() * .04f, getWidth() * .55f);
-            }
-            postInvalidateDelayed(250);
-        }
     }
 }

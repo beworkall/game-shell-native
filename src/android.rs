@@ -1,7 +1,7 @@
 //! Android activity entry point and launcher/input bridge.
 use jni::{
     objects::{JClass, JString},
-    sys::{jboolean, jfloat, jint, jstring},
+    sys::{jboolean, jfloat, jint, jlong, jstring},
     JNIEnv,
 };
 use std::collections::HashSet;
@@ -114,6 +114,25 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeButto
     if (0..=2).contains(&button) {
         crate::input::button(button as usize, down != 0);
     }
+}
+
+/// Total frames presented so far; the Java HUD turns this into FPS (Game Shell Native).
+#[no_mangle]
+pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativePresents(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    crate::gpu::PRESENTS.load(std::sync::atomic::Ordering::Relaxed) as jlong
+}
+
+/// Live audio mute from the in-game menu (Game Shell Native).
+#[no_mangle]
+pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeMute(
+    _env: JNIEnv,
+    _class: JClass,
+    mute: jboolean,
+) {
+    crate::audio::MUTED.store(mute != 0, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[no_mangle]

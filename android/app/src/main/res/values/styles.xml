@@ -1,8 +1,18 @@
 <resources>
     <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#D0E0AA</item>
+        <item name="android:colorAccent">#6EE7A8</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">#141815</item>
+        <item name="android:windowBackground">#0F1720</item>
+    </style>
+    <style name="SlideAnim" parent="android:Animation">
+        <item name="android:windowEnterAnimation">@anim/slide_in_right</item>
+        <item name="android:windowExitAnimation">@anim/slide_out_right</item>
+    </style>
+    <style name="SlideMenu" parent="android:Theme.Material.Dialog.NoActionBar">
+        <item name="android:windowAnimationStyle">@style/SlideAnim</item>
+        <item name="android:windowBackground">@color/menu_bg</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
     </style>
 </resources>

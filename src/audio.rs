@@ -11,6 +11,9 @@ static CALLBACKS: AtomicU64 = AtomicU64::new(0);
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
+/// Live mute switch driven by the in-game menu (Game Shell Native).
+pub static MUTED: AtomicBool = AtomicBool::new(false);
+
 pub fn start(ring: u64, capacity: u32) {
     if STARTED.swap(true, Ordering::SeqCst) || std::env::var("MUGUET_MUTE").is_ok() {
         return;
@@ -63,6 +66,7 @@ fn play(ring: u64, capacity: u32) -> anyhow::Result<cpal::Stream> {
                 }
             }
             for s in &mut out[take * 2..] { *s = 0.0; }
+            if MUTED.load(Ordering::Relaxed) { out.fill(0.0); }
             UNDERRUN_FRAMES.fetch_add((frames - take) as u64, Ordering::Relaxed);
             CALLBACKS.fetch_add(1, Ordering::Relaxed);
             hdr(1).store(read.wrapping_add(take as u32) as i32, Ordering::SeqCst);

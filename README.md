@@ -1,4 +1,4 @@
-# Game Shell Native
+# Game Shell Native (v0.3)
 
 Native Android runtime (Rust + Wasmtime + wgpu), forked from GTAV Mobile / Muguet (GPL-3.0-or-later).
 
@@ -20,3 +20,11 @@ Upload this folder to a PRIVATE GitHub repo (keep `.github`) -> Actions -> andro
 
 Experimental: upstream says gameplay on physical phones is not yet verified.
 See NOTICE.md for credits and the list of changes.
+
+## v0.3 highlights
+- First-run wizard: allow file access, pick the main game folder, game is auto-selected, settings auto-configured for your phone.
+- Winlator-style control editor: add/move/resize elements, set any key, mouse button or gamepad binding, save/duplicate/import `.icp`.
+- Gamepad (USB/Bluetooth): remap every button, stick deadzone, look speed.
+- In-game slide menu (Back button or the top-centre button): Resume, Restart, Exit, HUD (FPS / detailed), switch controls live, edit layout, mute, apply graphics, clear cache.
+- Tools: quick/full file verification, clear graphics and temp data, back up / restore saves, export log.
+- Backups live in `Documents/GTA5NativeData` (saves, layouts) so they survive an uninstall.

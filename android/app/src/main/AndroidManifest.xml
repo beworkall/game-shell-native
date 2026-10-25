@@ -1,17 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Needed for the optional multiplayer feature only -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Read the game folder you already have (no copying, no download) -->
+    <!-- Read the game folder you already have (no copying, no download) and keep backups in Documents -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="true" />
-    <application android:label="Game Shell Native" android:icon="@mipmap/ic_launcher" android:theme="@style/AppTheme"
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <application android:name=".ShellApp" android:label="Game Shell Native" android:icon="@mipmap/ic_launcher" android:theme="@style/AppTheme"
         android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:hasCode="true" android:supportsRtl="true">
-        <activity android:name=".LauncherActivity" android:exported="true">
+        <activity android:name=".LauncherActivity" android:exported="true" android:launchMode="singleTask"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".EditorActivity" android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|uiMode|density" />
         <activity android:name=".GameActivity" android:exported="false" android:process=":game"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|uiMode|density">
