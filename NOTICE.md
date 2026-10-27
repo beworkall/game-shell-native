@@ -51,3 +51,13 @@ Documents/GTA5NativeData; crash screen; About page; new app icon (original artwo
 bundled file manifest (hashes and sizes are kept for verification). Rust: two small JNI hooks
 (nativePresents for the FPS counter, nativeMute for live mute; src/android.rs, src/audio.rs).
 Control-profile format and editor ideas were studied from Winlator (LGPL-2.1) by brunodev85; no Winlator code was copied.
+
+### v0.4 (2026-10-27)
+New look (OLED black theme with selectable accent colour, rounded cards, press animation and vibration) built
+with plain Android views (Ui.java); redesigned launcher with a game library (optional cover images, long-press
+quick actions, last played), a 4-step setup wizard with performance presets, per-game settings in sections and an
+App settings page. In-game: freeze watchdog (no presented frames while not loading -> restart banner and a freeze
+report in Documents/GTA5NativeData/reports), thermal warning, FPS graph in the HUD, on-screen keyboard
+(KeyboardView.java), redesigned slide menu, vibration on touch-control presses. Saves are backed up automatically
+(incrementally) after playing. Play checks that the folder holds the expected game build. Rust: new JNI hook
+nativeKeyText (src/android.rs) so on-screen and hardware keyboards type text into the game (cheat console, text boxes).

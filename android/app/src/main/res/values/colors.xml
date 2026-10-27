@@ -1,4 +1,4 @@
 <resources>
-    <color name="icon_background">#0F1720</color>
-    <color name="menu_bg">#F00F1720</color>
+    <color name="icon_background">#000000</color>
+    <color name="menu_bg">#F5000000</color>
 </resources>

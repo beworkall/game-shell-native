@@ -33,6 +33,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeHorn(boolean down);
     private static native long nativePresents();
     private static native void nativeMute(boolean mute);
+    private static native void nativeKeyText(String key, boolean down, String text);
 
     private final Map<String, Set<String>> held = new HashMap<>();
     private Controls controls;
@@ -51,6 +52,23 @@ public final class GameActivity extends NativeActivity {
     private long hudT, hudPresents;
     private float fps;
     private Dialog menu;
+    // v0.4: theme, haptics, keyboard, HUD graph, freeze watchdog
+    private Ui u;
+    private boolean haptics = true;
+    private int freezeSec = 12;
+    private KeyboardView keyboard;
+    private FpsGraph graph;
+    private LinearLayout hudBox, freezeBanner;
+    private long lastPresents = -1, lastChange;
+    private boolean hadFrames, freezeShown, freezeReported, thermalWarned;
+    private final Runnable watchdog = new Runnable() {
+        @Override public void run() {
+            if (!active) return;
+            checkFreeze();
+            checkThermal();
+            handler.postDelayed(this, 1000);
+        }
+    };
     private final Map<String, String> analogActive = new HashMap<>();
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
 
@@ -104,7 +122,11 @@ public final class GameActivity extends NativeActivity {
             gQuality = j.optInt("quality", 1); gFps = j.optInt("fps", 0); gRes = j.optInt("res", 0);
             JSONObject m = j.optJSONObject("padmap");
             padMap = m == null ? new JSONObject() : m;
+            haptics = j.optBoolean("haptics", true);
+            freezeSec = j.optInt("freezeSec", 12);
+            u = new Ui(this, j.optInt("accent", 0), haptics);
         } catch (Exception ignored) { }
+        if (u == null) u = new Ui(this, 0, true);
         String name = Shell.read(new File(getFilesDir(), "active_profile.txt"));
         profileName = name == null || name.trim().isEmpty() ? Shell.BUILTIN : name.trim();
     }
@@ -113,15 +135,37 @@ public final class GameActivity extends NativeActivity {
         overlayRoot = new FrameLayout(this);
         ui = buildUi(profileName);
         overlayRoot.addView(ui, new FrameLayout.LayoutParams(-1, -1));
+        hudBox = new LinearLayout(this);
+        hudBox.setOrientation(LinearLayout.VERTICAL);
         hud = new TextView(this);
-        hud.setTextColor(0xFFFFFFFF); hud.setBackgroundColor(0x88000000); hud.setTextSize(11);
-        hud.setPadding(dp(6), dp(1), dp(6), dp(1)); hud.setVisibility(View.GONE);
-        overlayRoot.addView(hud, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
+        hud.setTextColor(0xFFFFFFFF); hud.setTextSize(11);
+        hud.setBackground(u.round(0x99000000, 8, 0));
+        hud.setPadding(dp(8), dp(2), dp(8), dp(2));
+        hudBox.addView(hud, new LinearLayout.LayoutParams(-2, -2));
+        graph = new FpsGraph(this, u.accent);
+        LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(dp(150), dp(34));
+        gl.topMargin = dp(3);
+        hudBox.addView(graph, gl);
+        hudBox.setVisibility(View.GONE);
+        FrameLayout.LayoutParams hl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
+        hl.leftMargin = dp(6); hl.topMargin = dp(4);
+        overlayRoot.addView(hudBox, hl);
         menuButton = new TextView(this);
-        menuButton.setText("\u2630"); menuButton.setTextColor(0xCCFFFFFF); menuButton.setTextSize(20);
-        menuButton.setBackgroundColor(0x44000000); menuButton.setPadding(dp(14), dp(2), dp(14), dp(2));
-        menuButton.setOnClickListener(v -> showMenu());
-        overlayRoot.addView(menuButton, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+        menuButton.setText("\u2630"); menuButton.setTextColor(0xEEFFFFFF); menuButton.setTextSize(18);
+        menuButton.setBackground(u.round(0x66000000, 16, Ui.alpha(u.accent, 0x99)));
+        menuButton.setPadding(dp(18), dp(1), dp(18), dp(1));
+        menuButton.setOnClickListener(v -> { u.buzz(0); showMenu(); });
+        FrameLayout.LayoutParams ml = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        ml.topMargin = dp(4);
+        overlayRoot.addView(menuButton, ml);
+        keyboard = new KeyboardView(this, u, new KeyboardView.Sink() {
+            @Override public void tap(String code, String text) { typeKey(code, text); }
+            @Override public void hide() { keyboard.setVisibility(View.GONE); }
+        });
+        keyboard.setVisibility(View.GONE);
+        FrameLayout.LayoutParams kl = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        kl.leftMargin = kl.rightMargin = dp(70); kl.bottomMargin = dp(6);
+        overlayRoot.addView(keyboard, kl);
         // NativeActivity owns the main surface. Draw controls in their own window.
         overlay = new android.widget.PopupWindow(overlayRoot, -1, -1, false);
         overlay.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
@@ -138,6 +182,7 @@ public final class GameActivity extends NativeActivity {
                 if (text != null) {
                     cv = new ControlView(this, new JSONObject(text), host);
                     cv.setAlpha(Math.max(0.15f, Math.min(1f, uiOpacity)));
+                    cv.setHaptics(haptics);
                     return cv;
                 }
             } catch (Exception ignored) { }
@@ -166,6 +211,8 @@ public final class GameActivity extends NativeActivity {
         applyHudMode();
         handler.post(lookTick);
         handler.post(hudTick);
+        lastChange = SystemClock.elapsedRealtime(); lastPresents = -1;
+        handler.post(watchdog);
         getWindow().getDecorView().post(() -> {
             if (active && !isFinishing() && !overlay.isShowing()) overlay.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START, 0, 0);
         });
@@ -174,7 +221,7 @@ public final class GameActivity extends NativeActivity {
     @Override protected void onPause() {
         overlay.dismiss();
         if (menu != null && menu.isShowing()) menu.dismiss();
-        active = false; handler.removeCallbacks(lookTick); handler.removeCallbacks(hudTick); lookX = lookY = 0;
+        active = false; handler.removeCallbacks(lookTick); handler.removeCallbacks(hudTick); handler.removeCallbacks(watchdog); lookX = lookY = 0;
         held.clear(); analogActive.clear();
         if (controls != null) controls.contacts.clear();
         if (cv != null) cv.reset();
@@ -195,6 +242,25 @@ public final class GameActivity extends NativeActivity {
             else if (key.equals("Horn")) nativeHorn(after);
             else nativeKey(key, after);
         }
+    }
+
+    /** Like key() but also types a character (hardware keyboard). */
+    private void keyText(String source, String key, boolean down, String text) {
+        if (!active) return;
+        Set<String> owners = held.computeIfAbsent(key, k -> new HashSet<>());
+        boolean before = !owners.isEmpty();
+        if (down) owners.add(source); else owners.remove(source);
+        boolean after = !owners.isEmpty();
+        if (before != after) {
+            try { nativeKeyText(key, after, after ? text : ""); } catch (Throwable t) { nativeKey(key, after); }
+        }
+    }
+
+    /** One tap from the on-screen keyboard: press with its character, release shortly after. */
+    private void typeKey(final String code, String text) {
+        if (!active) return;
+        try { nativeKeyText(code, true, text); } catch (Throwable t) { nativeKey(code, true); }
+        handler.postDelayed(() -> { try { nativeKeyText(code, false, ""); } catch (Throwable t) { nativeKey(code, false); } }, 60);
     }
 
     private void release(String source) {
@@ -273,7 +339,9 @@ public final class GameActivity extends NativeActivity {
         }
         String keyboard = keyboardKey(event.getKeyCode());
         if (keyboard != null) {
-            key("keyboard-" + event.getKeyCode(), keyboard, event.getAction() == KeyEvent.ACTION_DOWN);
+            int uc = event.getUnicodeChar();
+            String typed = uc >= 32 && uc != 127 ? String.valueOf((char) uc) : "";
+            keyText("keyboard-" + event.getKeyCode(), keyboard, event.getAction() == KeyEvent.ACTION_DOWN, typed);
             return true;
         }
         // Bypass NativeActivity.dispatchKeyEvent, which would redirect to the
@@ -286,6 +354,12 @@ public final class GameActivity extends NativeActivity {
         if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) return "Digit" + (code - KeyEvent.KEYCODE_0);
         if (code >= KeyEvent.KEYCODE_F1 && code <= KeyEvent.KEYCODE_F12) return "F" + (code - KeyEvent.KEYCODE_F1 + 1);
         switch (code) {
+            case KeyEvent.KEYCODE_GRAVE: return "Backquote";
+            case KeyEvent.KEYCODE_MINUS: return "Minus";
+            case KeyEvent.KEYCODE_EQUALS: return "Equal";
+            case KeyEvent.KEYCODE_PERIOD: return "Period";
+            case KeyEvent.KEYCODE_COMMA: return "Comma";
+            case KeyEvent.KEYCODE_SLASH: return "Slash";
             case KeyEvent.KEYCODE_ENTER: return "Enter";
             case KeyEvent.KEYCODE_ESCAPE: return "Escape";
             case KeyEvent.KEYCODE_SPACE: return "Space";
@@ -334,7 +408,8 @@ public final class GameActivity extends NativeActivity {
 
     // ================================================================ HUD
     private void applyHudMode() {
-        hud.setVisibility(hudMode == 0 ? View.GONE : View.VISIBLE);
+        hudBox.setVisibility(hudMode == 0 ? View.GONE : View.VISIBLE);
+        graph.setVisibility(hudMode >= 2 ? View.VISIBLE : View.GONE);
         hudT = 0;
         updateHud();
     }
@@ -366,6 +441,73 @@ public final class GameActivity extends NativeActivity {
             } catch (Throwable ignored) { }
         }
         hud.setText(sb.toString());
+        if (hudMode >= 2 && fps >= 0) graph.add(fps);
+    }
+
+    // ================================================================ freeze watchdog
+    /** Counts presented frames; if none arrive for freezeSec while the game is not loading, offers a restart. */
+    private void checkFreeze() {
+        if (freezeSec <= 0) return;
+        long now = SystemClock.elapsedRealtime();
+        long presents;
+        try { presents = nativePresents(); } catch (Throwable t) { return; }
+        boolean loading = false;
+        try { loading = nativeLoading(); } catch (Throwable ignored) { }
+        boolean menuOpen = menu != null && menu.isShowing();
+        if (presents != lastPresents || loading || menuOpen) {
+            if (presents != lastPresents && lastPresents >= 0) hadFrames = true;
+            lastPresents = presents; lastChange = now;
+            if (freezeShown && !loading && !menuOpen) hideFreezeBanner(true);
+            return;
+        }
+        long stuck = (now - lastChange) / 1000;
+        if (hadFrames && !freezeShown && stuck >= freezeSec) showFreezeBanner(stuck);
+    }
+
+    private void showFreezeBanner(long seconds) {
+        freezeShown = true;
+        u.buzz(2);
+        String where = "";
+        if (!freezeReported) {
+            freezeReported = true;
+            File r = Shell.freezeReport(this, "No new frames for " + seconds + " s. Profile " + profileName + ", HUD " + hudMode + ".");
+            if (r != null) where = "\nA report was saved to Documents/GTA5NativeData/reports.";
+        }
+        LinearLayout b = new LinearLayout(this);
+        b.setOrientation(LinearLayout.VERTICAL);
+        b.setBackground(u.round(0xF2121418, 18, Ui.BAD));
+        b.setPadding(dp(16), dp(12), dp(16), dp(12));
+        b.addView(u.text("Game stopped responding", 17, Ui.TEXT, true));
+        TextView msg = u.body("No new frames for " + seconds + " seconds. This is a known engine freeze (physics), not your phone. Restart loads your last save." + where);
+        msg.setTextSize(13);
+        b.addView(msg);
+        Button restart = u.primary("Restart game", () -> restart());
+        Button wait = u.secondary("Keep waiting", () -> { freezeSec *= 2; hideFreezeBanner(false); });
+        Button exit = u.danger("Exit", this::exitGame);
+        b.addView(u.split(restart, wait, exit));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Math.min(dp(560), getResources().getDisplayMetrics().widthPixels - dp(40)), -2, Gravity.CENTER);
+        freezeBanner = b;
+        overlayRoot.addView(b, lp);
+        Ui.enter(b, this);
+    }
+
+    private void hideFreezeBanner(boolean recovered) {
+        if (freezeBanner != null) overlayRoot.removeView(freezeBanner);
+        freezeBanner = null; freezeShown = false;
+        lastChange = SystemClock.elapsedRealtime();
+        if (recovered) Toast.makeText(this, "Game is running again", Toast.LENGTH_SHORT).show();
+    }
+
+    private void checkThermal() {
+        if (thermalWarned) return;
+        try {
+            int th = getSystemService(PowerManager.class).getCurrentThermalStatus();
+            if (th >= PowerManager.THERMAL_STATUS_SEVERE) {
+                thermalWarned = true;
+                u.buzz(1);
+                Toast.makeText(this, "Your phone is getting hot. Open the menu (\u2630) and pick a lower render scale or the 30 FPS cap.", Toast.LENGTH_LONG).show();
+            }
+        } catch (Throwable ignored) { }
     }
 
     // ================================================================ in-game slide menu
@@ -393,101 +535,110 @@ public final class GameActivity extends NativeActivity {
 
     @Override public void onBackPressed() { showMenu(); }
 
-    private Button menuButton(LinearLayout col, String label, Runnable action) {
-        Button b = new Button(this); b.setText(label); b.setAllCaps(false);
-        b.setOnClickListener(v -> action.run()); col.addView(b); return b;
-    }
-
-    private TextView menuHeading(LinearLayout col, String label) {
-        TextView t = new TextView(this); t.setText(label); t.setTextSize(13); t.setTextColor(0xFF8FB3FF); t.setPadding(0, dp(12), 0, dp(2)); col.addView(t); return t;
-    }
-
     private void showMenu() {
         if (menu != null && menu.isShowing()) { menu.dismiss(); return; }
         final Dialog d = new Dialog(this, R.style.SlideMenu);
         menu = d;
         LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL); col.setPadding(dp(16), dp(16), dp(16), dp(16));
-        TextView title = new TextView(this); title.setText("Game menu"); title.setTextSize(22); title.setTextColor(0xFFFFFFFF); col.addView(title);
+        col.setOrientation(LinearLayout.VERTICAL); col.setPadding(dp(18), dp(18), dp(18), dp(24));
+        col.setBackgroundColor(0xF5000000);
+        col.addView(u.title("Game menu"));
+        String sub = (fps > 0 ? String.format(Locale.US, "%.0f FPS  ·  ", fps) : "") + (padDevice == null ? "Touch controls" : "Controller: " + padDevice);
+        col.addView(u.subtitle(sub));
 
-        menuButton(col, "Resume", d::dismiss);
-        menuButton(col, "Restart game", () -> new AlertDialog.Builder(this).setMessage("Restart the game? Unsaved progress is lost.")
-            .setNegativeButton("Cancel", null).setPositiveButton("Restart", (x, w) -> restart()).show());
-        menuButton(col, "Exit game", () -> new AlertDialog.Builder(this).setMessage("Exit the game? Unsaved progress is lost.")
-            .setNegativeButton("Stay", null).setPositiveButton("Exit", (x, w) -> exitGame()).show());
+        col.addView(u.primary("Resume", d::dismiss));
+        col.addView(u.split(
+            u.secondary("Restart", () -> new AlertDialog.Builder(this).setMessage("Restart the game? Unsaved progress is lost.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Restart", (x, w) -> restart()).show()),
+            u.danger("Exit game", () -> new AlertDialog.Builder(this).setMessage("Exit the game? Unsaved progress is lost.")
+                .setNegativeButton("Stay", null).setPositiveButton("Exit", (x, w) -> exitGame()).show())));
 
-        menuHeading(col, "On-screen HUD");
-        final Spinner hudSpin = new Spinner(this);
-        hudSpin.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"Off", "FPS", "Detailed (FPS, battery, RAM, thermal)"}));
-        hudSpin.setSelection(hudMode);
+        // ---- display
+        col.addView(u.section("Display"));
+        LinearLayout disp = u.card();
+        disp.addView(u.label("Performance HUD"));
+        final Spinner hudSpin = u.spinner(new String[]{"Off", "FPS", "Detailed + FPS graph"}, hudMode);
         hudSpin.setOnItemSelectedListener(new SimpleSelect(pos -> { if (pos != hudMode) { hudMode = pos; saveOverride("hud", pos); applyHudMode(); } }));
-        col.addView(hudSpin);
-
-        menuHeading(col, "Controls");
-        final Switch show = new Switch(this); show.setText("Show touch controls"); show.setChecked(touchVisible);
-        show.setOnCheckedChangeListener((b, on) -> { touchVisible = on; ui.setVisibility(on ? View.VISIBLE : View.INVISIBLE); });
-        col.addView(show);
-        final List<String> names = Shell.listProfiles(this);
-        String[] shown = new String[names.size()];
-        for (int i = 0; i < shown.length; i++) shown[i] = names.get(i).equals(Shell.BUILTIN) ? "Built-in (original)" : names.get(i);
-        final Spinner prof = new Spinner(this);
-        prof.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, shown));
-        prof.setSelection(Math.max(0, names.indexOf(profileName)));
-        prof.setOnItemSelectedListener(new SimpleSelect(pos -> { if (!names.get(pos).equals(profileName)) swapUi(names.get(pos)); }));
-        col.addView(prof);
-        menuButton(col, "Edit this layout", () -> {
-            if (profileName.equals(Shell.BUILTIN)) { Toast.makeText(this, "Pick a profile first.", Toast.LENGTH_SHORT).show(); return; }
-            pendingReload = true; d.dismiss();
-            startActivity(new Intent(this, EditorActivity.class).putExtra("profile", profileName));
-        });
-        TextView op = new TextView(this); op.setText("Controls opacity"); op.setTextColor(0xFFFFFFFF); col.addView(op);
-        SeekBar opacity = new SeekBar(this); opacity.setMax(85); opacity.setProgress(Math.round(uiOpacity * 100) - 15);
-        opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        disp.addView(hudSpin);
+        Switch show = u.toggle("Show touch controls", touchVisible);
+        show.setOnCheckedChangeListener((b2, on) -> { touchVisible = on; ui.setVisibility(on ? View.VISIBLE : View.INVISIBLE); u.buzz(0); });
+        disp.addView(show);
+        SeekBar[] op = new SeekBar[1];
+        disp.addView(u.slider("Controls opacity", 85, Math.round(uiOpacity * 100) - 15, p -> (p + 15) + "%", op));
+        op[0].setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int p, boolean user) {
                 uiOpacity = (p + 15) / 100f; if (ui != null) ui.setAlpha(uiOpacity); saveOverride("opacity", uiOpacity);
             }
             @Override public void onStartTrackingTouch(SeekBar s) { }
             @Override public void onStopTrackingTouch(SeekBar s) { }
         });
-        col.addView(opacity);
+        col.addView(disp);
 
-        menuHeading(col, "Sound");
-        final Switch mute = new Switch(this); mute.setText("Mute"); mute.setChecked(muted);
-        mute.setOnCheckedChangeListener((b, on) -> { muted = on; try { nativeMute(on); } catch (Throwable ignored) { } saveOverride("mute", on); });
-        col.addView(mute);
+        // ---- controls
+        col.addView(u.section("Controls"));
+        LinearLayout ctl = u.card();
+        ctl.addView(u.label("Layout"));
+        final List<String> names = Shell.listProfiles(this);
+        String[] shown = new String[names.size()];
+        for (int i = 0; i < shown.length; i++) shown[i] = names.get(i).equals(Shell.BUILTIN) ? "Built-in (original)" : names.get(i);
+        final Spinner prof = u.spinner(shown, Math.max(0, names.indexOf(profileName)));
+        prof.setOnItemSelectedListener(new SimpleSelect(pos -> { if (!names.get(pos).equals(profileName)) { swapUi(names.get(pos)); u.buzz(1); } }));
+        ctl.addView(prof);
+        ctl.addView(u.split(
+            u.secondary("Edit layout", () -> {
+                if (profileName.equals(Shell.BUILTIN)) { Toast.makeText(this, "Pick a layout first.", Toast.LENGTH_SHORT).show(); return; }
+                pendingReload = true; d.dismiss();
+                startActivity(new Intent(this, EditorActivity.class).putExtra("profile", profileName));
+            }),
+            u.secondary("Keyboard", () -> { d.dismiss(); keyboard.setVisibility(View.VISIBLE); Ui.enter(keyboard, this); })));
+        Switch hap = u.toggle("Vibrate on button press", haptics);
+        hap.setOnCheckedChangeListener((b2, on) -> { haptics = on; if (cv != null) cv.setHaptics(on); saveOverride("haptics", on); });
+        ctl.addView(hap);
+        col.addView(ctl);
 
-        menuHeading(col, "Graphics (needs a restart)");
-        final Spinner scale = new Spinner(this);
-        scale.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Shell.QUALITY_NAMES));
-        scale.setSelection(gQuality);
-        col.addView(scale);
-        final Spinner cap = new Spinner(this);
-        cap.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Shell.FPS_NAMES));
-        cap.setSelection(gFps);
-        col.addView(cap);
-        final Spinner res = new Spinner(this);
-        res.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Shell.RES_NAMES));
-        res.setSelection(gRes);
-        col.addView(res);
-        menuButton(col, "Apply graphics and restart", () -> {
+        // ---- sound
+        col.addView(u.section("Sound"));
+        LinearLayout snd = u.card();
+        Switch mute = u.toggle("Mute game audio", muted);
+        mute.setOnCheckedChangeListener((b2, on) -> { muted = on; try { nativeMute(on); } catch (Throwable ignored) { } saveOverride("mute", on); });
+        snd.addView(mute);
+        col.addView(snd);
+
+        // ---- graphics
+        col.addView(u.section("Graphics (applies after restart)"));
+        LinearLayout gfx = u.card();
+        gfx.addView(u.label("Render scale"));
+        final Spinner scale = u.spinner(Shell.QUALITY_NAMES, gQuality); gfx.addView(scale);
+        gfx.addView(u.label("Frame rate"));
+        final Spinner cap = u.spinner(Shell.FPS_NAMES, gFps); gfx.addView(cap);
+        gfx.addView(u.label("Internal resolution"));
+        final Spinner res = u.spinner(Shell.RES_NAMES, gRes); gfx.addView(res);
+        gfx.addView(u.primary("Apply and restart", () -> {
             saveOverride("quality", scale.getSelectedItemPosition()); saveOverride("fps", cap.getSelectedItemPosition()); saveOverride("res", res.getSelectedItemPosition());
             restart();
-        });
-        menuButton(col, "Clear graphics cache and restart", () -> new AlertDialog.Builder(this)
+        }));
+        gfx.addView(u.secondary("Clear graphics cache and restart", () -> new AlertDialog.Builder(this)
             .setMessage("Delete the compile cache and temp files? Saves are kept. The next launch takes several minutes.")
-            .setNegativeButton("Cancel", null).setPositiveButton("Clear", (x, w) -> { Shell.clearGraphicsAndTemp(this); restart(); }).show());
+            .setNegativeButton("Cancel", null).setPositiveButton("Clear", (x, w) -> { Shell.clearGraphicsAndTemp(this); restart(); }).show()));
+        col.addView(gfx);
 
-        menuHeading(col, "Controller");
-        TextView pad = new TextView(this); pad.setTextColor(0xFFCCCCCC);
-        pad.setText(padDevice == null ? "No controller input yet. Connect one by USB or Bluetooth and press a button." : "Connected: " + padDevice);
-        col.addView(pad);
+        // ---- help
+        col.addView(u.section("Help"));
+        LinearLayout help = u.card();
+        help.addView(u.body("If the picture freezes but sound keeps playing, the game engine has stopped. The app notices this after " + freezeSec + " s and offers a restart."));
+        help.addView(u.secondary("Save a report now", () -> {
+            File r = Shell.freezeReport(this, "Manual report from the game menu. FPS " + fps + ".");
+            Toast.makeText(this, r == null ? "Could not save (file access?)" : "Saved: Documents/GTA5NativeData/reports/" + r.getName(), Toast.LENGTH_LONG).show();
+            u.buzz(r == null ? 2 : 1);
+        }));
+        col.addView(help);
 
         ScrollView sv = new ScrollView(this); sv.addView(col);
         d.setContentView(sv);
         Window w = d.getWindow();
         if (w != null) {
             w.setGravity(Gravity.END);
-            w.setLayout(dp(330), ViewGroup.LayoutParams.MATCH_PARENT);
+            w.setLayout(dp(360), ViewGroup.LayoutParams.MATCH_PARENT);
             w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
         d.show();

@@ -116,6 +116,38 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeButto
     }
 }
 
+/// Key press that also types a character into the game's text input (on-screen and hardware keyboards,
+/// cheat console, text boxes). Game Shell Native.
+#[no_mangle]
+pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeKeyText(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: JString,
+    down: jboolean,
+    text: JString,
+) {
+    let Ok(name) = env.get_string(&name) else {
+        return;
+    };
+    let name: String = name.into();
+    let text: String = env.get_string(&text).map(|t| t.into()).unwrap_or_default();
+    let pressed = down != 0;
+    if pressed && !crate::pad::FOCUSED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let mut guard = KEYS.lock().unwrap();
+    let keys = guard.get_or_insert_with(HashSet::new);
+    let changed = if pressed { keys.insert(name.clone()) } else { keys.remove(&name) };
+    if changed {
+        crate::input::set_locked(true);
+        if pressed {
+            crate::mp::key_pressed(&name);
+        }
+        let typed = if pressed && !text.is_empty() { Some(text.as_str()) } else { None };
+        crate::input::key(&name, pressed, false, typed, false);
+    }
+}
+
 /// Total frames presented so far; the Java HUD turns this into FPS (Game Shell Native).
 #[no_mangle]
 pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativePresents(

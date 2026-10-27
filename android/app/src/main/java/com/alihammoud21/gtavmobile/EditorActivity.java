@@ -49,12 +49,12 @@ public final class EditorActivity extends Activity implements ControlView.Listen
         view.setListener(this);
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#141815"));
+        root.setBackgroundColor(0xFF0A0B0D);
         root.addView(view, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setBackgroundColor(0xCC000000);
+        bar.setBackgroundColor(0xE6000000);
         bar.setPadding(dp(6), dp(2), dp(6), dp(2));
         add(bar, "+ Add", this::addDialog);
         add(bar, "Keys", this::keysDialog);
@@ -88,11 +88,22 @@ public final class EditorActivity extends Activity implements ControlView.Listen
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
+    private Ui ui() { if (u == null) u = Ui.of(this); return u; }
+    private Ui u;
+
     private void add(LinearLayout bar, String label, Runnable action) {
         Button b = new Button(this);
         b.setText(label); b.setAllCaps(false); b.setTextSize(12); b.setMinWidth(0); b.setMinimumWidth(0);
-        b.setOnClickListener(v -> action.run());
-        bar.addView(b, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)));
+        b.setStateListAnimator(null);
+        boolean main = label.equals("SAVE");
+        b.setBackground(ui().round(main ? ui().accent : Ui.SURFACE2, 12, main ? 0 : Ui.STROKE));
+        b.setTextColor(main ? ui().onAccent() : Ui.TEXT);
+        b.setPadding(dp(12), 0, dp(12), 0);
+        b.setOnClickListener(v -> { ui().buzz(0); action.run(); });
+        ui().pressFx(b);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
+        lp.setMargins(dp(3), dp(4), dp(3), dp(4));
+        bar.addView(b, lp);
     }
 
     @Override public void onSelect(ControlView.El e) { refresh(e); }

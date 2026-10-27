@@ -63,6 +63,8 @@ public final class ControlView extends View {
     public String name = "Custom";
     public int id = 100;
     public float opacity = 0.9f;
+    private boolean haptics = true;
+    public void setHaptics(boolean on) { haptics = on; }
 
     // editing
     private boolean editMode;
@@ -294,6 +296,7 @@ public final class ControlView extends View {
         El h = topAt(x, y);
         if (h == null) { t.role = R_LOOK; return; }
         t.el = h;
+        if (haptics) Ui.buzz(getContext(), 0);
         switch (h.type) {
             case "D_PAD": case "STICK": t.role = R_DIR; dir(t, x, y); break;
             case "TRACKPAD": t.role = R_TRACK; break;
@@ -313,6 +316,7 @@ public final class ControlView extends View {
         List<String> codes = new ArrayList<>();
         for (String b : e.bind) { String c = resolve(b); if (c != null) codes.add(c); }
         if (codes.isEmpty()) return;
+        if (haptics) Ui.buzz(getContext(), 0);
         double ang = Math.toDegrees(Math.atan2(y - e.cy, x - e.cx));
         double rel = ((ang + 90.0) % 360 + 360) % 360;                  // 0 at the top, clockwise
         int idx = (int) (rel / (360.0 / codes.size()));

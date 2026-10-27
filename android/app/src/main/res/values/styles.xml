@@ -1,9 +1,11 @@
 <resources>
     <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#6EE7A8</item>
+        <item name="android:colorAccent">#FF7A1A</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">#0F1720</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
     </style>
     <style name="SlideAnim" parent="android:Animation">
         <item name="android:windowEnterAnimation">@anim/slide_in_right</item>

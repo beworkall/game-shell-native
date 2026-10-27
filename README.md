@@ -1,4 +1,4 @@
-# Game Shell Native (v0.3)
+# Game Shell Native (v0.4)
 
 Native Android runtime (Rust + Wasmtime + wgpu), forked from GTAV Mobile / Muguet (GPL-3.0-or-later).
 
@@ -28,3 +28,10 @@ See NOTICE.md for credits and the list of changes.
 - In-game slide menu (Back button or the top-centre button): Resume, Restart, Exit, HUD (FPS / detailed), switch controls live, edit layout, mute, apply graphics, clear cache.
 - Tools: quick/full file verification, clear graphics and temp data, back up / restore saves, export log.
 - Backups live in `Documents/GTA5NativeData` (saves, layouts) so they survive an uninstall.
+
+## v0.4 highlights
+- New OLED-black design with your choice of accent colour, smooth animations and vibration feedback.
+- Game library with cover images (long-press a game for quick actions) and a 4-step setup wizard with presets.
+- Freeze watchdog: if the picture stops but sound continues, a banner offers a one-tap restart and saves a report.
+- On-screen keyboard (in-game menu -> Keyboard) that really types into the game, plus hardware keyboard typing.
+- FPS graph HUD, overheating warning, automatic save backups after every session, wrong-build warning on Play.

@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.json.JSONObject;
 
+
 /** Shared helpers for the launcher, editor and game (Game Shell Native). */
 final class Shell {
     private Shell() { }
@@ -107,12 +108,38 @@ final class Shell {
         try { copyTree(profileDir(c), new File(docs(), "profiles")); } catch (IOException ignored) { }
     }
 
+    /** Folders inside the game's file root that are scratch space, not saves. */
+    private static final Set<String> SKIP = new HashSet<>(Arrays.asList("tmp", "dev", "proc"));
+
+    /** Copies only files that changed (size or newer time). Returns bytes copied. */
+    static long syncTree(File src, File dst, boolean top) throws IOException {
+        long bytes = 0;
+        if (src.isDirectory()) {
+            dst.mkdirs();
+            File[] kids = src.listFiles();
+            if (kids != null) for (File k : kids) {
+                if (top && SKIP.contains(k.getName())) continue;
+                bytes += syncTree(k, new File(dst, k.getName()), false);
+            }
+        } else if (src.isFile()) {
+            if (dst.isFile() && dst.length() == src.length() && dst.lastModified() >= src.lastModified()) return 0;
+            File parent = dst.getParentFile(); if (parent != null) parent.mkdirs();
+            try (InputStream in = new FileInputStream(src); OutputStream out = new FileOutputStream(dst)) { copy(in, out); }
+            dst.setLastModified(src.lastModified());
+            bytes += src.length();
+        }
+        return bytes;
+    }
+
     static String backupSaves(Context c) {
         if (!hasAccess()) return "Allow file access first.";
         try {
-            long n = copyTree(new File(c.getFilesDir(), "saves"), new File(docs(), "saves"));
+            File saves = new File(c.getFilesDir(), "saves");
+            if (!saves.isDirectory()) return "No saves yet.";
+            long n = syncTree(saves, new File(docs(), "saves"), true);
             backupProfiles(c);
-            return "Backed up " + (n >> 20) + " MB to Documents/GTA5NativeData";
+            c.getSharedPreferences("shell", Context.MODE_PRIVATE).edit().putLong("lastBackup", System.currentTimeMillis()).apply();
+            return n == 0 ? "Backup is already up to date." : "Backed up " + Math.max(1, n >> 10) + " KB to Documents/GTA5NativeData";
         } catch (IOException e) { return "Backup failed: " + e.getMessage(); }
     }
 
@@ -120,8 +147,34 @@ final class Shell {
         if (!hasAccess()) return "Allow file access first.";
         File src = new File(docs(), "saves");
         if (!src.isDirectory()) return "No backup found in Documents/GTA5NativeData/saves";
-        try { long n = copyTree(src, new File(c.getFilesDir(), "saves")); return "Restored " + (n >> 20) + " MB of saves"; }
+        try { long n = copyTree(src, new File(c.getFilesDir(), "saves")); return "Restored " + Math.max(1, n >> 10) + " KB of saves"; }
         catch (IOException e) { return "Restore failed: " + e.getMessage(); }
+    }
+
+    // ------------------------------------------------------------ freeze reports
+    static File reportsDir() { File d = new File(docs(), "reports"); d.mkdirs(); return d; }
+
+    /** Writes a freeze report (summary + the last part of the runtime log). Returns the file or null. */
+    static File freezeReport(Context c, String summary) {
+        if (!hasAccess()) return null;
+        try {
+            String stamp = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+            File out = new File(reportsDir(), "freeze-" + stamp + ".txt");
+            try (FileOutputStream os = new FileOutputStream(out)) {
+                os.write(("Game Shell Native freeze report\n" + new Date() + "\n" + socName() + ", Android " + Build.VERSION.RELEASE + "\n" + summary + "\n\n===== runtime.log (tail) =====\n").getBytes(StandardCharsets.UTF_8));
+                File log = new File(c.getFilesDir(), "runtime.log");
+                if (log.isFile()) {
+                    try (RandomAccessFile raf = new RandomAccessFile(log, "r")) {
+                        long len = raf.length(), start = Math.max(0, len - 400_000);
+                        raf.seek(start);
+                        byte[] buf = new byte[(int) (len - start)];
+                        raf.readFully(buf);
+                        os.write(buf);
+                    }
+                }
+            }
+            return out;
+        } catch (IOException e) { return null; }
     }
 
     /** Deletes the compile cache and temp files that can cause crashes, blank screens or lag. Saves are never touched. */
@@ -148,24 +201,76 @@ final class Shell {
         g.put("profile", "FPS");
         g.put("mp", false); g.put("host", false); g.put("server", ""); g.put("player", "");
         g.put("padDead", 20); g.put("padLook", 10); g.put("hideTouchOnPad", false);
+        g.put("id", java.util.UUID.randomUUID().toString()); g.put("preset", 1); g.put("hud", 0);
         return g;
+    }
+
+    // ------------------------------------------------------------ presets
+    static final String[] PRESET_NAMES = {"Performance", "Balanced", "Quality"};
+    static final String[] PRESET_DESCS = {
+        "Render scale 0.40, 30 FPS cap, low textures. Coolest and smoothest.",
+        "Render scale 0.50, 30 FPS cap, low textures. Good mix for most phones.",
+        "Render scale 0.65, 30 FPS cap, medium textures. Sharper, runs warmer."};
+    static final int[][] PRESETS = {{0, 0, 1}, {1, 0, 1}, {2, 0, 2}};   // quality index, fps index, texture index (1 = Low, 2 = Medium)
+
+    static double ramGb(Context c) {
+        ActivityManager am = (ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+        ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(mi);
+        return mi.totalMem / 1e9;
+    }
+
+    static int recommendedPreset(Context c) {
+        double gb = ramGb(c);
+        return gb >= 10.5 ? 2 : gb >= 7 ? 1 : 0;
+    }
+
+    static void applyPreset(JSONObject g, int preset) {
+        int[] p = PRESETS[Math.max(0, Math.min(PRESETS.length - 1, preset))];
+        try { g.put("quality", p[0]); g.put("fps", p[1]); g.put("texture", p[2]); g.put("res", 0); g.put("preset", preset); } catch (Exception ignored) { }
     }
 
     /** Fills quality settings from the phone's RAM and chip. Returns a short explanation. */
     static String autoConfigure(Context c, JSONObject g) {
-        ActivityManager am = (ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
-        ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
-        am.getMemoryInfo(mi);
-        double gb = mi.totalMem / 1e9;
-        String soc = socName();
-        int quality, tex, fps = 0;
-        String tier;
-        if (gb >= 10.5) { tier = "high-end"; quality = 2; tex = 2; }
-        else if (gb >= 7) { tier = "mid-range"; quality = 1; tex = 1; }
-        else { tier = "entry-level"; quality = 0; tex = 1; }
-        try { g.put("quality", quality); g.put("fps", fps); g.put("texture", tex); g.put("res", 0); } catch (Exception ignored) { }
-        return String.format(Locale.US, "Detected %.1f GB RAM, %s (%s): render scale %s, 30 FPS cap, %s textures.",
-            gb, soc, tier, QUALITY_NAMES[quality], TEX_NAMES[tex].toLowerCase(Locale.US));
+        int p = recommendedPreset(c);
+        applyPreset(g, p);
+        return String.format(Locale.US, "Detected %.1f GB RAM on %s: applied the %s preset.", ramGb(c), socName(), PRESET_NAMES[p]);
+    }
+
+    // ------------------------------------------------------------ build check
+    private static String expectedBuild;
+    private static long expectedWasmBytes = -1;
+
+    private static synchronized void loadExpected(Context c) {
+        if (expectedBuild != null) return;
+        try (InputStream in = c.getAssets().open("game-manifest.json")) {
+            ByteArrayOutputStream b = new ByteArrayOutputStream(); copy(in, b);
+            JSONObject m = new JSONObject(b.toString("UTF-8"));
+            expectedBuild = m.optString("build", "");
+            org.json.JSONArray files = m.getJSONArray("files");
+            for (int i = 0; i < files.length(); i++) {
+                JSONObject f = files.getJSONObject(i);
+                if (f.optString("relative").endsWith("/game.wasm")) { expectedWasmBytes = f.optLong("bytes", -1); break; }
+            }
+        } catch (Exception e) { expectedBuild = ""; }
+    }
+
+    static String expectedBuild(Context c) { loadExpected(c); return expectedBuild; }
+
+    /** null when the folder holds the build this runtime expects; otherwise a short explanation. */
+    static String buildProblem(Context c, File root) {
+        loadExpected(c);
+        if (expectedBuild == null || expectedBuild.isEmpty()) return null;
+        File wasm = new File(root, "b/" + expectedBuild + "/game.wasm");
+        if (!wasm.isFile()) {
+            List<String> found = new ArrayList<>();
+            File[] builds = new File(root, "b").listFiles(File::isDirectory);
+            if (builds != null) for (File b : builds) found.add(b.getName());
+            return "This folder has game build " + (found.isEmpty() ? "(none)" : found) + ", but this app is made for build " + expectedBuild + ". It will probably not start correctly.";
+        }
+        if (expectedWasmBytes > 0 && wasm.length() != expectedWasmBytes)
+            return "game.wasm has the wrong size (" + wasm.length() + " bytes, expected " + expectedWasmBytes + "). The file is damaged or from a different release. Run Full verify.";
+        return null;
     }
 
     static String socName() {
