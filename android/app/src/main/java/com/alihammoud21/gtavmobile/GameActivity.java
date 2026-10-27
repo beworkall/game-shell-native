@@ -43,7 +43,8 @@ public final class GameActivity extends NativeActivity {
     private TextView hud, menuButton;
     private android.widget.PopupWindow overlay;
     private boolean active, muted, touchVisible = true, pendingReload;
-    private float lookX, lookY;
+    private float lookX, lookY, digitalX, digitalY;
+    private final Set<String> lookHeld = new HashSet<>();
     private int hudMode, gQuality = 1, gFps, gRes;
     private float uiOpacity = 0.9f;
     private float padDead = 0.20f, padLook = 1.0f;
@@ -84,7 +85,8 @@ public final class GameActivity extends NativeActivity {
     private final Runnable lookTick = new Runnable() {
         @Override public void run() {
             if (!active) return;
-            if (Math.abs(lookX) > .15f || Math.abs(lookY) > .15f) nativeLook(lookX * 12 * padLook, lookY * 12 * padLook);
+            float lx = Math.max(-1f, Math.min(1f, lookX + digitalX)), ly = Math.max(-1f, Math.min(1f, lookY + digitalY));
+            if (Math.abs(lx) > .15f || Math.abs(ly) > .15f) nativeLook(lx * 12 * padLook, ly * 12 * padLook);
             handler.postDelayed(this, 16);
         }
     };
@@ -222,7 +224,7 @@ public final class GameActivity extends NativeActivity {
         overlay.dismiss();
         if (menu != null && menu.isShowing()) menu.dismiss();
         active = false; handler.removeCallbacks(lookTick); handler.removeCallbacks(hudTick); handler.removeCallbacks(watchdog); lookX = lookY = 0;
-        held.clear(); analogActive.clear();
+        held.clear(); analogActive.clear(); lookHeld.clear(); digitalX = digitalY = 0;
         if (controls != null) controls.contacts.clear();
         if (cv != null) cv.reset();
         nativeRelease(); nativeHorn(false);
@@ -239,6 +241,12 @@ public final class GameActivity extends NativeActivity {
         if (before != after) {
             if (key.equals("Fire")) nativeButton(0, after);
             else if (key.equals("Aim")) nativeButton(2, after);
+            else if (key.equals("MouseMiddle")) nativeButton(1, after);
+            else if (key.startsWith("Look")) {
+                if (after) lookHeld.add(key); else lookHeld.remove(key);
+                digitalX = (lookHeld.contains("LookRight") ? 1f : 0f) - (lookHeld.contains("LookLeft") ? 1f : 0f);
+                digitalY = (lookHeld.contains("LookDown") ? 1f : 0f) - (lookHeld.contains("LookUp") ? 1f : 0f);
+            }
             else if (key.equals("Horn")) nativeHorn(after);
             else nativeKey(key, after);
         }

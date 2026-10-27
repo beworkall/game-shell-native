@@ -3,8 +3,8 @@ package com.alihammoud21.gtavmobile;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.VibrationEffect;
@@ -20,15 +20,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Small hand-made design system for Game Shell Native: OLED black, rounded cards, one accent colour,
- * press animation and haptics. Plain Android views only (no AndroidX / Compose needed).
+ * Hand-made design system for Game Shell Native: bold, flat, high-contrast panels (in the spirit of
+ * Liberty Recompiled), bundled fonts (Barlow Condensed for display, Inter for text), Material icons,
+ * press animation and haptics. Plain Android views only.
  */
 final class Ui {
     // ---------------------------------------------------------------- palette
-    static final int BG = 0xFF000000, SURFACE = 0xFF111316, SURFACE2 = 0xFF1B1E24, STROKE = 0xFF2A2F37;
-    static final int TEXT = 0xFFF2F4F7, MUTED = 0xFF98A2B3, OK = 0xFF3DDC97, WARN = 0xFFFFC24B, BAD = 0xFFFF5A5F;
-    static final String[] ACCENT_NAMES = {"Sunset orange", "Electric cyan", "Mint green", "Soft purple", "Hot pink"};
-    static final int[] ACCENTS = {0xFFFF7A1A, 0xFF00D8F0, 0xFF3DDC97, 0xFFA78BFA, 0xFFFF4D8D};
+    static final int BG = 0xFF0E1116, SURFACE = 0xFF181C23, SURFACE2 = 0xFF2B313A, STROKE = 0xFF333A44;
+    static final int TEXT = 0xFFF4F5F7, MUTED = 0xFF9AA1AC, OK = 0xFF3DDC97, WARN = 0xFFFFC24B, BAD = 0xFFFF5A5F;
+    static final String[] ACCENT_NAMES = {"Classic grey", "Sunset orange", "Electric cyan", "Mint green", "Soft purple", "Hot pink"};
+    static final int[] ACCENTS = {0xFFA4A8AE, 0xFFFF7A1A, 0xFF00D8F0, 0xFF3DDC97, 0xFFA78BFA, 0xFFFF4D8D};
 
     final Context c;
     final int accent;
@@ -52,7 +53,7 @@ final class Ui {
     /** Readable text colour on top of the accent. */
     int onAccent() {
         int r = (accent >> 16) & 0xFF, g = (accent >> 8) & 0xFF, b = accent & 0xFF;
-        return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? 0xFF000000 : 0xFFFFFFFF;
+        return (0.299 * r + 0.587 * g + 0.114 * b) > 140 ? 0xFF0B0D10 : 0xFFFFFFFF;
     }
 
     GradientDrawable round(int fill, int radiusDp, int strokeColor) {
@@ -61,6 +62,38 @@ final class Ui {
         d.setCornerRadius(dp(radiusDp));
         if (strokeColor != 0) d.setStroke(dp(1), strokeColor);
         return d;
+    }
+
+    // ---------------------------------------------------------------- fonts
+    private static Typeface display, displayBold, body, semi, heavy;
+
+    private static Typeface font(Context c, String file, Typeface fallback) {
+        try { return Typeface.createFromAsset(c.getAssets(), "fonts/" + file); } catch (Throwable t) { return fallback; }
+    }
+
+    /** Barlow Condensed ExtraBold: logo, page titles, the big Play button. */
+    Typeface display() { if (display == null) display = font(c, "BarlowCondensed_800ExtraBold.ttf", Typeface.DEFAULT_BOLD); return display; }
+    Typeface displayBold() { if (displayBold == null) displayBold = font(c, "BarlowCondensed_700Bold.ttf", Typeface.DEFAULT_BOLD); return displayBold; }
+    /** Inter for all running text. */
+    Typeface body() { if (body == null) body = font(c, "Inter_400Regular.ttf", Typeface.DEFAULT); return body; }
+    Typeface semi() { if (semi == null) semi = font(c, "Inter_600SemiBold.ttf", Typeface.DEFAULT_BOLD); return semi; }
+    Typeface heavy() { if (heavy == null) heavy = font(c, "Inter_800ExtraBold.ttf", Typeface.DEFAULT_BOLD); return heavy; }
+
+    // ---------------------------------------------------------------- icons
+    Drawable icon(int res, int color, int sizeDp) {
+        Drawable d = c.getDrawable(res);
+        if (d == null) return null;
+        d = d.mutate();
+        d.setTint(color);
+        d.setBounds(0, 0, dp(sizeDp), dp(sizeDp));
+        return d;
+    }
+
+    ImageView iconView(int res, int color, int sizeDp) {
+        ImageView iv = new ImageView(c);
+        iv.setImageDrawable(icon(res, color, sizeDp));
+        iv.setLayoutParams(new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)));
+        return iv;
     }
 
     // ---------------------------------------------------------------- haptics
@@ -85,7 +118,7 @@ final class Ui {
         v.setOnTouchListener((view, e) -> {
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    view.animate().scaleX(0.96f).scaleY(0.96f).setDuration(90).start();
+                    view.animate().scaleX(0.965f).scaleY(0.965f).setDuration(90).start();
                     buzz(0);
                     break;
                 case MotionEvent.ACTION_UP:
@@ -117,44 +150,168 @@ final class Ui {
     }
 
     // ---------------------------------------------------------------- page scaffolding
-    /** Black scrolling page; returns the column to fill. */
-    LinearLayout page(Activity a) {
+    boolean landscape() {
+        android.util.DisplayMetrics m = c.getResources().getDisplayMetrics();
+        return m.widthPixels > m.heightPixels;
+    }
+
+    LinearLayout column() {
         LinearLayout col = new LinearLayout(c);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(18), dp(28), dp(18), dp(36));
+        return col;
+    }
+
+    ScrollView scroll(View child) {
         ScrollView sv = new ScrollView(c);
-        sv.setBackgroundColor(BG);
         sv.setFillViewport(true);
-        sv.addView(col);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.addView(child);
+        return sv;
+    }
+
+    /** Single scrolling page; returns the column to fill. */
+    LinearLayout page(Activity a) {
+        LinearLayout col = column();
+        int side = landscape() ? 48 : 18;
+        col.setPadding(dp(side), dp(24), dp(side), dp(36));
+        ScrollView sv = scroll(col);
+        sv.setBackgroundColor(BG);
         a.setContentView(sv);
         enter(col, c);
         return col;
     }
 
+    /**
+     * Two panes side by side in landscape (left wider, right in a panel), stacked in portrait.
+     * Returns {left, right} columns.
+     */
+    LinearLayout[] panes(Activity a) {
+        LinearLayout left = column(), right = column();
+        if (landscape()) {
+            LinearLayout root = new LinearLayout(c);
+            root.setOrientation(LinearLayout.HORIZONTAL);
+            root.setBackgroundColor(BG);
+            left.setPadding(dp(40), dp(20), dp(24), dp(24));
+            ScrollView ls = scroll(left);
+            root.addView(ls, new LinearLayout.LayoutParams(0, -1, 1.12f));
+            right.setPadding(dp(26), dp(22), dp(26), dp(26));
+            ScrollView rs = scroll(right);
+            rs.setBackground(round(SURFACE, 26, 0));
+            LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(0, -1, 1f);
+            rl.setMargins(dp(8), dp(14), dp(14), dp(14));
+            root.addView(rs, rl);
+            a.setContentView(root);
+            enter(left, c); enter(rs, c);
+        } else {
+            LinearLayout col = column();
+            col.setPadding(dp(18), dp(20), dp(18), dp(30));
+            col.addView(left);
+            right.setBackground(round(SURFACE, 24, 0));
+            right.setPadding(dp(18), dp(18), dp(18), dp(20));
+            LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
+            rl.topMargin = dp(16);
+            col.addView(right, rl);
+            ScrollView sv = scroll(col);
+            sv.setBackgroundColor(BG);
+            a.setContentView(sv);
+            enter(col, c);
+        }
+        return new LinearLayout[]{left, right};
+    }
+
+    /** Logo: our original icon art + condensed wordmark, in the style of a game launcher header. */
+    LinearLayout logo(float scale) {
+        LinearLayout r = row();
+        r.setGravity(Gravity.CENTER);
+        ImageView art = new ImageView(c);
+        art.setImageResource(R.drawable.icon_foreground);
+        art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams al = new LinearLayout.LayoutParams(dp(118 * scale), dp(118 * scale));
+        al.rightMargin = dp(2);
+        r.addView(art, al);
+        LinearLayout words = column();
+        TextView name = new TextView(c);
+        name.setText("Game Shell");
+        name.setTypeface(display());
+        name.setTextSize(58 * scale);
+        name.setTextColor(0xFFC3C6CB);
+        name.setIncludeFontPadding(false);
+        name.setLetterSpacing(-0.01f);
+        words.addView(name);
+        View bar = new View(c);
+        bar.setBackgroundColor(0xFF05070A);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, dp(3 * scale));
+        bl.topMargin = dp(1);
+        words.addView(bar, bl);
+        TextView sub = new TextView(c);
+        sub.setText("NATIVE  ·  FOR ANDROID");
+        sub.setTypeface(heavy());
+        sub.setTextSize(15 * scale);
+        sub.setTextColor(0xFFC3C6CB);
+        sub.setGravity(Gravity.END);
+        sub.setLetterSpacing(0.02f);
+        words.addView(sub, new LinearLayout.LayoutParams(-1, -2));
+        r.addView(words, new LinearLayout.LayoutParams(-2, -2));
+        return r;
+    }
+
     TextView text(String s, float sp, int color, boolean bold) {
         TextView t = new TextView(c);
         t.setText(s); t.setTextSize(sp); t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        t.setTypeface(bold ? semi() : body());
         return t;
     }
 
-    TextView title(String s) { TextView t = text(s, 28, TEXT, true); t.setPadding(0, 0, 0, dp(2)); return t; }
-    TextView subtitle(String s) { TextView t = text(s, 14, MUTED, false); t.setPadding(0, 0, 0, dp(14)); return t; }
-    TextView body(String s) { TextView t = text(s, 14, MUTED, false); t.setLineSpacing(0, 1.15f); return t; }
-    TextView label(String s) { TextView t = text(s, 13, TEXT, false); t.setPadding(0, dp(10), 0, dp(4)); return t; }
+    TextView title(String s) {
+        TextView t = text(s, 34, TEXT, true);
+        t.setTypeface(display());
+        t.setIncludeFontPadding(false);
+        t.setPadding(0, 0, 0, dp(4));
+        return t;
+    }
+
+    /** Panel heading, like "Install the game" in the reference design. */
+    TextView heading(String s) {
+        TextView t = text(s, 25, TEXT, true);
+        t.setTypeface(heavy());
+        t.setPadding(0, 0, 0, dp(4));
+        return t;
+    }
+
+    TextView subtitle(String s) { TextView t = text(s, 15, MUTED, false); t.setPadding(0, 0, 0, dp(14)); return t; }
+    TextView body(String s) { TextView t = text(s, 15, MUTED, false); t.setLineSpacing(0, 1.15f); return t; }
+
+    TextView label(String s) {
+        TextView t = text(s, 17, TEXT, false);
+        t.setPadding(0, dp(14), 0, dp(4));
+        return t;
+    }
+
+    /** Big field label + muted value, the way the reference shows "Base game / Not selected". */
+    LinearLayout field(String name, String value) {
+        LinearLayout f = column();
+        f.addView(label(name));
+        TextView v = text(value, 15, MUTED, false);
+        v.setPadding(0, 0, 0, dp(8));
+        f.addView(v);
+        f.setTag(v);
+        return f;
+    }
+
+    static void setField(LinearLayout field, String value) { ((TextView) field.getTag()).setText(value); }
 
     TextView section(String s) {
-        TextView t = text(s.toUpperCase(java.util.Locale.US), 12, accent, true);
-        t.setLetterSpacing(0.08f);
-        t.setPadding(dp(4), dp(18), 0, dp(8));
+        TextView t = text(s.toUpperCase(java.util.Locale.US), 13, accent == ACCENTS[0] ? MUTED : accent, true);
+        t.setTypeface(heavy());
+        t.setLetterSpacing(0.1f);
+        t.setPadding(dp(4), dp(22), 0, dp(8));
         return t;
     }
 
     LinearLayout card() {
-        LinearLayout l = new LinearLayout(c);
-        l.setOrientation(LinearLayout.VERTICAL);
-        l.setBackground(round(SURFACE, 18, STROKE));
-        l.setPadding(dp(16), dp(14), dp(16), dp(16));
+        LinearLayout l = column();
+        l.setBackground(round(SURFACE, 22, 0));
+        l.setPadding(dp(18), dp(14), dp(18), dp(18));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(12);
         l.setLayoutParams(lp);
@@ -168,65 +325,108 @@ final class Ui {
         return r;
     }
 
-    /** Adds views to a row with equal weight and a small gap. */
+    /** Adds views to a row with equal weight and a gap. */
     LinearLayout split(View... views) {
         LinearLayout r = row();
         for (int i = 0; i < views.length; i++) {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
-            if (i > 0) lp.leftMargin = dp(8);
+            if (i > 0) lp.leftMargin = dp(10);
             r.addView(views[i], lp);
         }
         return r;
     }
 
-    private Button baseButton(String label, Runnable action) {
+    private Button baseButton(String label, int iconRes, Runnable action) {
         Button b = new Button(c);
-        b.setText(label); b.setAllCaps(false); b.setTextSize(15);
+        b.setText(label); b.setAllCaps(false); b.setTextSize(17);
+        b.setTypeface(semi());
         b.setStateListAnimator(null);
-        b.setMinHeight(dp(48)); b.setMinimumHeight(dp(48));
-        b.setPadding(dp(14), dp(10), dp(14), dp(10));
+        b.setMinHeight(dp(58)); b.setMinimumHeight(dp(58));
+        b.setPadding(dp(16), dp(12), dp(16), dp(12));
         b.setOnClickListener(v -> { try { action.run(); } catch (Throwable t) { Toast.makeText(c, "Error: " + t, Toast.LENGTH_LONG).show(); buzz(2); } });
+        b.setTag(iconRes);
         pressFx(b);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(8);
+        lp.topMargin = dp(10);
         b.setLayoutParams(lp);
         return b;
     }
 
-    Button primary(String label, Runnable action) {
-        Button b = baseButton(label, action);
-        b.setBackground(round(accent, 14, 0));
+    private void addIcon(Button b, int iconRes, int color) {
+        if (iconRes == 0) return;
+        b.setCompoundDrawablesRelative(icon(iconRes, color, 22), null, null, null);
+        b.setCompoundDrawablePadding(dp(10));
+    }
+
+    Button primary(String label, Runnable action) { return primary(label, 0, action); }
+    Button secondary(String label, Runnable action) { return secondary(label, 0, action); }
+    Button danger(String label, Runnable action) { return danger(label, 0, action); }
+
+    Button primary(String label, int iconRes, Runnable action) {
+        Button b = baseButton(label, iconRes, action);
+        b.setBackground(round(accent, 16, 0));
         b.setTextColor(onAccent());
-        b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        b.setTypeface(heavy());
+        addIcon(b, iconRes, onAccent());
         return b;
     }
 
-    Button secondary(String label, Runnable action) {
-        Button b = baseButton(label, action);
-        b.setBackground(round(SURFACE2, 14, STROKE));
+    Button secondary(String label, int iconRes, Runnable action) {
+        Button b = baseButton(label, iconRes, action);
+        b.setBackground(round(SURFACE2, 16, 0));
         b.setTextColor(TEXT);
+        addIcon(b, iconRes, TEXT);
         return b;
     }
 
-    Button danger(String label, Runnable action) {
-        Button b = baseButton(label, action);
-        b.setBackground(round(alpha(BAD, 0x22), 14, alpha(BAD, 0x88)));
+    Button danger(String label, int iconRes, Runnable action) {
+        Button b = baseButton(label, iconRes, action);
+        b.setBackground(round(alpha(BAD, 0x26), 16, 0));
         b.setTextColor(BAD);
+        addIcon(b, iconRes, BAD);
         return b;
     }
 
-    /** A coloured dot followed by text. kind: 0 ok, 1 warn, 2 bad, 3 neutral. */
+    /** The giant Play button. */
+    Button hero(String label, Runnable action) {
+        Button b = baseButton(label, 0, action);
+        b.setBackground(round(accent, 18, 0));
+        b.setTextColor(onAccent());
+        b.setTypeface(heavy());
+        b.setTextSize(46);
+        b.setLetterSpacing(-0.02f);
+        b.setMinHeight(dp(116)); b.setMinimumHeight(dp(116));
+        b.setIncludeFontPadding(false);
+        return b;
+    }
+
+    /** Square icon-only button. */
+    Button iconButton(int iconRes, Runnable action) {
+        Button b = baseButton("", iconRes, action);
+        b.setBackground(round(SURFACE2, 16, 0));
+        b.setPadding(dp(16), 0, 0, 0);
+        b.setCompoundDrawablesRelative(icon(iconRes, TEXT, 26), null, null, null);
+        b.setLayoutParams(new LinearLayout.LayoutParams(dp(60), dp(60)));
+        return b;
+    }
+
+    private static int statusIcon(int kind) {
+        return kind == 0 ? R.drawable.ic_check_circle : kind == 1 ? R.drawable.ic_warning : kind == 2 ? R.drawable.ic_error : R.drawable.ic_info;
+    }
+
+    private static int statusColor(int kind) { return kind == 0 ? OK : kind == 1 ? WARN : kind == 2 ? BAD : MUTED; }
+
+    /** An icon followed by text. kind: 0 ok, 1 warn, 2 bad, 3 neutral. */
     LinearLayout status(String s, int kind) {
         LinearLayout r = row();
-        View dot = new View(c);
-        int col = kind == 0 ? OK : kind == 1 ? WARN : kind == 2 ? BAD : MUTED;
-        dot.setBackground(round(col, 6, 0));
-        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(dp(10), dp(10));
-        dl.rightMargin = dp(10);
-        r.addView(dot, dl);
-        TextView t = text(s, 14, TEXT, false);
+        r.setGravity(Gravity.TOP);
+        ImageView iv = iconView(statusIcon(kind), statusColor(kind), 20);
+        ((LinearLayout.LayoutParams) iv.getLayoutParams()).rightMargin = dp(10);
+        ((LinearLayout.LayoutParams) iv.getLayoutParams()).topMargin = dp(1);
+        r.addView(iv);
+        TextView t = text(s, 15, TEXT, false);
         r.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
-        r.setPadding(0, dp(4), 0, dp(4));
+        r.setPadding(0, dp(5), 0, dp(5));
         r.setTag(t);
         return r;
     }
@@ -234,75 +434,84 @@ final class Ui {
     static void setStatus(LinearLayout statusRow, String s, int kind) {
         if (statusRow == null) return;
         ((TextView) statusRow.getTag()).setText(s);
-        int col = kind == 0 ? OK : kind == 1 ? WARN : kind == 2 ? BAD : MUTED;
-        GradientDrawable d = (GradientDrawable) statusRow.getChildAt(0).getBackground();
-        d.setColor(col);
+        ImageView iv = (ImageView) statusRow.getChildAt(0);
+        Drawable d = statusRow.getContext().getDrawable(statusIcon(kind));
+        if (d != null) { d = d.mutate(); d.setTint(statusColor(kind)); iv.setImageDrawable(d); }
     }
 
     TextView pill(String s, int color) {
-        TextView t = text(s, 11, color, true);
-        t.setBackground(round(alpha(color, 0x26), 10, alpha(color, 0x66)));
-        t.setPadding(dp(8), dp(2), dp(8), dp(2));
+        TextView t = text(s.toUpperCase(java.util.Locale.US), 11, color, true);
+        t.setTypeface(heavy());
+        t.setLetterSpacing(0.06f);
+        t.setBackground(round(alpha(color, 0x26), 10, 0));
+        t.setPadding(dp(9), dp(3), dp(9), dp(3));
         return t;
     }
 
     Spinner spinner(String[] items, int selected) {
         Spinner s = new Spinner(c);
+        final Typeface tf = semi();
         ArrayAdapter<String> a = new ArrayAdapter<String>(c, android.R.layout.simple_spinner_item, items) {
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 View v = super.getView(position, convertView, parent);
-                if (v instanceof TextView) { ((TextView) v).setTextColor(TEXT); ((TextView) v).setTextSize(15); ((TextView) v).setEllipsize(TextUtils.TruncateAt.END); }
+                if (v instanceof TextView) { TextView t = (TextView) v; t.setTextColor(TEXT); t.setTextSize(16); t.setTypeface(tf); t.setEllipsize(TextUtils.TruncateAt.END); }
+                return v;
+            }
+            @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                View v = super.getDropDownView(position, convertView, parent);
+                if (v instanceof TextView) { TextView t = (TextView) v; t.setTextColor(TEXT); t.setTypeface(tf); }
                 return v;
             }
         };
         a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         s.setAdapter(a);
         s.setSelection(Math.max(0, Math.min(items.length - 1, selected)));
-        s.setBackground(round(SURFACE2, 12, STROKE));
-        s.setPadding(dp(8), dp(4), dp(8), dp(4));
-        s.setPopupBackgroundDrawable(round(SURFACE2, 12, STROKE));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
-        s.setLayoutParams(lp);
+        s.setBackground(round(SURFACE2, 14, 0));
+        s.setPadding(dp(10), dp(4), dp(10), dp(4));
+        s.setPopupBackgroundDrawable(round(SURFACE2, 14, STROKE));
+        s.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(54)));
         return s;
     }
 
     EditText input(String value, String hint) {
         EditText e = new EditText(c);
         e.setSingleLine(); e.setText(value); e.setHint(hint);
-        e.setTextColor(TEXT); e.setHintTextColor(MUTED); e.setTextSize(15);
-        e.setBackground(round(SURFACE2, 12, STROKE));
-        e.setPadding(dp(14), dp(12), dp(14), dp(12));
+        e.setTextColor(TEXT); e.setHintTextColor(MUTED); e.setTextSize(16); e.setTypeface(body());
+        e.setBackground(round(SURFACE2, 14, 0));
+        e.setPadding(dp(16), dp(14), dp(16), dp(14));
         return e;
     }
 
     Switch toggle(String label, boolean on) {
         Switch s = new Switch(c);
-        s.setText(label); s.setTextColor(TEXT); s.setTextSize(15); s.setChecked(on);
-        s.setPadding(0, dp(10), 0, dp(10));
+        s.setText(label); s.setTextColor(TEXT); s.setTextSize(16); s.setTypeface(body()); s.setChecked(on);
+        s.setPadding(0, dp(12), 0, dp(12));
         int[][] states = {{android.R.attr.state_checked}, {}};
-        s.setThumbTintList(new ColorStateList(states, new int[]{accent, 0xFFB0B7C3}));
-        s.setTrackTintList(new ColorStateList(states, new int[]{alpha(accent, 0x88), 0xFF3A404A}));
+        int on1 = accent == ACCENTS[0] ? 0xFFE6E8EB : accent;
+        s.setThumbTintList(new ColorStateList(states, new int[]{on1, 0xFFB0B7C3}));
+        s.setTrackTintList(new ColorStateList(states, new int[]{alpha(on1, 0x88), 0xFF3A404A}));
         s.setOnCheckedChangeListener((b, v) -> buzz(0));
         return s;
     }
 
-    /** Seek bar with a live value read-out. format turns the progress into text. */
+    /** Seek bar with a live value read-out. */
     interface Fmt { String of(int progress); }
 
     LinearLayout slider(String label, int max, int value, Fmt fmt, SeekBar[] out) {
-        LinearLayout box = new LinearLayout(c);
-        box.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout box = column();
         LinearLayout head = row();
-        TextView l = text(label, 13, TEXT, false);
-        final TextView v = text(fmt.of(value), 13, accent, true);
+        TextView l = text(label, 16, TEXT, false);
+        final TextView v = text(fmt.of(value), 15, accent == ACCENTS[0] ? TEXT : accent, true);
         head.addView(l, new LinearLayout.LayoutParams(0, -2, 1f));
         head.addView(v);
-        head.setPadding(0, dp(10), 0, 0);
+        head.setPadding(0, dp(12), 0, 0);
         box.addView(head);
         SeekBar s = new SeekBar(c);
         s.setMax(max); s.setProgress(Math.max(0, Math.min(max, value)));
-        s.setProgressTintList(ColorStateList.valueOf(accent));
-        s.setThumbTintList(ColorStateList.valueOf(accent));
+        int tint = accent == ACCENTS[0] ? 0xFFE6E8EB : accent;
+        s.setProgressTintList(ColorStateList.valueOf(tint));
+        s.setThumbTintList(ColorStateList.valueOf(tint));
+        s.setPadding(dp(4), dp(10), dp(4), dp(6));
         s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar b, int p, boolean user) { v.setText(fmt.of(p)); }
             @Override public void onStartTrackingTouch(SeekBar b) { }
@@ -313,25 +522,25 @@ final class Ui {
         return box;
     }
 
-    /** Selectable cards (one choice). Returns the container; current choice via the callback. */
+    /** Selectable cards (one choice). */
     interface Pick { void on(int index); }
 
     LinearLayout choices(String[] titles, String[] descs, int selected, int recommended, Pick pick) {
-        final LinearLayout box = new LinearLayout(c);
-        box.setOrientation(LinearLayout.VERTICAL);
+        final LinearLayout box = column();
         final List<LinearLayout> cards = new ArrayList<>();
         for (int i = 0; i < titles.length; i++) {
             final int idx = i;
-            LinearLayout cd = new LinearLayout(c);
-            cd.setOrientation(LinearLayout.VERTICAL);
-            cd.setPadding(dp(14), dp(12), dp(14), dp(12));
+            LinearLayout cd = column();
+            cd.setPadding(dp(16), dp(14), dp(16), dp(14));
             LinearLayout head = row();
-            head.addView(text(titles[i], 16, TEXT, true), new LinearLayout.LayoutParams(0, -2, 1f));
-            if (i == recommended) head.addView(pill("RECOMMENDED", accent));
+            TextView t = text(titles[i], 18, TEXT, true);
+            t.setTypeface(heavy());
+            head.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+            if (i == recommended) head.addView(pill("Recommended", accent == ACCENTS[0] ? OK : accent));
             cd.addView(head);
-            if (descs != null && descs[i] != null) { TextView d = body(descs[i]); d.setTextSize(13); cd.addView(d); }
+            if (descs != null && descs[i] != null) { TextView d = body(descs[i]); d.setTextSize(14); d.setPadding(0, dp(3), 0, 0); cd.addView(d); }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.bottomMargin = dp(8);
+            lp.bottomMargin = dp(10);
             box.addView(cd, lp);
             cards.add(cd);
             cd.setOnClickListener(v -> {
@@ -346,19 +555,21 @@ final class Ui {
     }
 
     private void paintChoice(LinearLayout cd, boolean on) {
-        GradientDrawable d = round(on ? alpha(accent, 0x1F) : SURFACE2, 14, on ? accent : STROKE);
-        if (on) d.setStroke(dp(2), accent);
+        int edge = accent == ACCENTS[0] ? 0xFFE6E8EB : accent;
+        GradientDrawable d = round(on ? alpha(edge, 0x1C) : SURFACE2, 16, 0);
+        if (on) d.setStroke(dp(2), edge);
         cd.setBackground(d);
     }
 
-    /** Progress bar for wizards. */
+    /** Segmented progress bar for wizards. */
     View progress(int step, int total) {
         LinearLayout r = row();
+        int on = accent == ACCENTS[0] ? 0xFFE6E8EB : accent;
         for (int i = 0; i < total; i++) {
             View seg = new View(c);
-            seg.setBackground(round(i <= step ? accent : STROKE, 3, 0));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(5), 1f);
-            if (i > 0) lp.leftMargin = dp(6);
+            seg.setBackground(round(i <= step ? on : SURFACE2, 3, 0));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(6), 1f);
+            if (i > 0) lp.leftMargin = dp(8);
             r.addView(seg, lp);
         }
         r.setPadding(0, 0, 0, dp(18));

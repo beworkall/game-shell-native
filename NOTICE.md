@@ -61,3 +61,10 @@ report in Documents/GTA5NativeData/reports), thermal warning, FPS graph in the H
 (KeyboardView.java), redesigned slide menu, vibration on touch-control presses. Saves are backed up automatically
 (incrementally) after playing. Play checks that the folder holds the expected game build. Rust: new JNI hook
 nativeKeyText (src/android.rs) so on-screen and hardware keyboards type text into the game (cheat console, text boxes).
+
+## Game Shell Native v0.5 (2026-10-27)
+- Launcher, Ui, ControlView and EditorActivity rewritten (two-pane home, folder picker and phone scan, Controls page, Winlator-style editor).
+- Bundled fonts: Barlow Condensed and Inter, SIL Open Font License 1.1 (assets/fonts/OFL.txt).
+- Interface icons: Material Icons by Google, Apache License 2.0 (assets/icons/MaterialIcons-Apache-2.0.txt), converted to Android vector drawables.
+- Control icons (assets/icons/0-17.png) and the "GTA 5 (Winlator)" profile come from Winlator by brunodev85, LGPL-2.1 (assets/icons/LGPL-2.1.txt). The editor's design follows Winlator's InputControlsView / ControlsEditorActivity.
+- App icon: original artwork; contains no Rockstar logos or game art.

@@ -68,7 +68,7 @@ final class KeyboardView extends LinearLayout {
     private TextView cell(LinearLayout r, String label, float weight) {
         TextView t = new TextView(getContext());
         t.setText(label); t.setGravity(Gravity.CENTER); t.setTextColor(Ui.TEXT); t.setTextSize(16);
-        t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        t.setTypeface(ui.semi());
         t.setBackground(ui.round(Ui.SURFACE2, 10, Ui.STROKE));
         LayoutParams lp = new LayoutParams(0, ui.dp(42), weight);
         lp.setMargins(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2));

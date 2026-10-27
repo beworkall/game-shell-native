@@ -35,3 +35,11 @@ See NOTICE.md for credits and the list of changes.
 - Freeze watchdog: if the picture stops but sound continues, a banner offers a one-tap restart and saves a report.
 - On-screen keyboard (in-game menu -> Keyboard) that really types into the game, plus hardware keyboard typing.
 - FPS graph HUD, overheating warning, automatic save backups after every session, wrong-build warning on Play.
+
+## v0.5 highlights
+- Bold two-pane home: big logo, device line (version · model · SoC · GPU), giant Play button, game panel on the right.
+- Real fonts (Barlow Condensed + Inter) and Material vector icons instead of emoji.
+- Find the game anywhere: **Choose folder** (Android folder picker) or **Scan phone**. Detection is by contents, not folder name.
+- New **Controls** page: Use / Edit / Copy layouts, New, Import .icp.
+- Layout editor rebuilt to match Winlator: draggable floating toolbox, element sheet (type, shape, keyboard/mouse/gamepad bindings, scale, opacity, toggle, mouse-move, text, icons, range keys, radial slots), grid snap, autosave.
+- New original app icon.

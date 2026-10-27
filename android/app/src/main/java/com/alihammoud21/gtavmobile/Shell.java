@@ -85,7 +85,7 @@ final class Shell {
 
     /** First run: copy the bundled profiles; if a backup exists in Documents, restore it instead. */
     static void installDefaultProfiles(Context c) {
-        File marker = new File(c.getFilesDir(), "profiles-installed");
+        File marker = new File(c.getFilesDir(), "profiles-installed-v2");
         if (marker.exists()) return;
         try {
             if (hasAccess()) {
@@ -279,20 +279,69 @@ final class Shell {
         return (Build.MANUFACTURER + " " + Build.MODEL + ", " + s).trim();
     }
 
-    // ------------------------------------------------------------ bindings
+    // ------------------------------------------------------------ bindings (Winlator names and order)
+    static final String[] KEYBOARD_BINDINGS = ("NONE KEY_UP KEY_RIGHT KEY_DOWN KEY_LEFT KEY_ENTER KEY_ESC KEY_BKSP KEY_DEL KEY_INSERT KEY_TAB KEY_SPACE "
+        + "KEY_CTRL_L KEY_CTRL_R KEY_SHIFT_L KEY_SHIFT_R KEY_ALT_L KEY_ALT_R KEY_HOME KEY_PRTSCN KEY_PG_UP KEY_PG_DOWN KEY_END KEY_CAPS_LOCK KEY_NUM_LOCK "
+        + "KEY_0 KEY_1 KEY_2 KEY_3 KEY_4 KEY_5 KEY_6 KEY_7 KEY_8 KEY_9 KEY_A KEY_B KEY_C KEY_D KEY_E KEY_F KEY_G KEY_H KEY_I KEY_J KEY_K KEY_L KEY_M "
+        + "KEY_N KEY_O KEY_P KEY_Q KEY_R KEY_S KEY_T KEY_U KEY_V KEY_W KEY_X KEY_Y KEY_Z KEY_BRACKET_LEFT KEY_BRACKET_RIGHT KEY_BACKSLASH KEY_SLASH "
+        + "KEY_SEMICOLON KEY_COMMA KEY_PERIOD KEY_APOSTROPHE KEY_KP_ADD KEY_MINUS KEY_F1 KEY_F2 KEY_F3 KEY_F4 KEY_F5 KEY_F6 KEY_F7 KEY_F8 KEY_F9 KEY_F10 "
+        + "KEY_F11 KEY_F12 KEY_KP_0 KEY_KP_1 KEY_KP_2 KEY_KP_3 KEY_KP_4 KEY_KP_5 KEY_KP_6 KEY_KP_7 KEY_KP_8 KEY_KP_9").split(" ");
+    static final String[] MOUSE_BINDINGS = ("NONE MOUSE_LEFT_BUTTON MOUSE_MIDDLE_BUTTON MOUSE_RIGHT_BUTTON MOUSE_MOVE_LEFT MOUSE_MOVE_RIGHT MOUSE_MOVE_UP "
+        + "MOUSE_MOVE_DOWN MOUSE_SCROLL_UP MOUSE_SCROLL_DOWN").split(" ");
+    static final String[] GAMEPAD_BINDINGS = ("NONE GAMEPAD_BUTTON_A GAMEPAD_BUTTON_B GAMEPAD_BUTTON_X GAMEPAD_BUTTON_Y GAMEPAD_BUTTON_L1 GAMEPAD_BUTTON_R1 "
+        + "GAMEPAD_BUTTON_SELECT GAMEPAD_BUTTON_START GAMEPAD_BUTTON_L3 GAMEPAD_BUTTON_R3 GAMEPAD_BUTTON_L2 GAMEPAD_BUTTON_R2 GAMEPAD_LEFT_THUMB_UP "
+        + "GAMEPAD_LEFT_THUMB_RIGHT GAMEPAD_LEFT_THUMB_DOWN GAMEPAD_LEFT_THUMB_LEFT GAMEPAD_RIGHT_THUMB_UP GAMEPAD_RIGHT_THUMB_RIGHT GAMEPAD_RIGHT_THUMB_DOWN "
+        + "GAMEPAD_RIGHT_THUMB_LEFT GAMEPAD_DPAD_UP GAMEPAD_DPAD_RIGHT GAMEPAD_DPAD_DOWN GAMEPAD_DPAD_LEFT").split(" ");
+    static final String[] BINDING_CATEGORIES = {"Keyboard", "Mouse", "Gamepad"};
+
+    static String[] bindingsFor(int category) { return category == 1 ? MOUSE_BINDINGS : category == 2 ? GAMEPAD_BINDINGS : KEYBOARD_BINDINGS; }
+
+    static int categoryOf(String b) { return b == null ? 0 : b.startsWith("MOUSE_") ? 1 : b.startsWith("GAMEPAD_") ? 2 : 0; }
+
+    /** All bindings (used by the gamepad remap screen). */
     static String[] bindingNames() {
-        List<String> n = new ArrayList<>();
-        n.add("NONE");
-        for (char c = 'A'; c <= 'Z'; c++) n.add("KEY_" + c);
-        for (int i = 0; i <= 9; i++) n.add("KEY_" + i);
-        for (int i = 1; i <= 12; i++) n.add("KEY_F" + i);
-        n.addAll(Arrays.asList("KEY_SPACE", "KEY_ENTER", "KEY_ESC", "KEY_TAB", "KEY_BKSP", "KEY_DEL", "KEY_SHIFT_L", "KEY_CTRL_L", "KEY_ALT_L",
-            "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "MOUSE_LEFT_BUTTON", "MOUSE_RIGHT_BUTTON",
-            "GAMEPAD_BUTTON_A", "GAMEPAD_BUTTON_B", "GAMEPAD_BUTTON_X", "GAMEPAD_BUTTON_Y", "GAMEPAD_BUTTON_L1", "GAMEPAD_BUTTON_R1",
-            "GAMEPAD_BUTTON_L2", "GAMEPAD_BUTTON_R2", "GAMEPAD_BUTTON_L3", "GAMEPAD_BUTTON_R3", "GAMEPAD_BUTTON_START", "GAMEPAD_BUTTON_SELECT",
-            "GAMEPAD_DPAD_UP", "GAMEPAD_DPAD_DOWN", "GAMEPAD_DPAD_LEFT", "GAMEPAD_DPAD_RIGHT",
-            "GAMEPAD_LEFT_THUMB_UP", "GAMEPAD_LEFT_THUMB_DOWN", "GAMEPAD_LEFT_THUMB_LEFT", "GAMEPAD_LEFT_THUMB_RIGHT"));
-        return n.toArray(new String[0]);
+        List<String> all = new ArrayList<>(Arrays.asList(KEYBOARD_BINDINGS));
+        all.addAll(Arrays.asList(MOUSE_BINDINGS).subList(1, MOUSE_BINDINGS.length));
+        all.addAll(Arrays.asList(GAMEPAD_BINDINGS).subList(1, GAMEPAD_BINDINGS.length));
+        return all.toArray(new String[0]);
+    }
+
+    static String[] bindingLabels(String[] names) {
+        String[] out = new String[names.length];
+        for (int i = 0; i < names.length; i++) out[i] = names[i].equals("NONE") ? "None" : bindingLabel(names[i]);
+        return out;
+    }
+
+    /** Short on-button text, like Winlator's Binding.toString(). */
+    static String bindingLabel(String b) {
+        if (b == null || b.equals("NONE")) return "";
+        switch (b) {
+            case "KEY_SHIFT_L": return "L SHIFT";
+            case "KEY_SHIFT_R": return "R SHIFT";
+            case "KEY_CTRL_L": return "L CTRL";
+            case "KEY_CTRL_R": return "R CTRL";
+            case "KEY_ALT_L": return "L ALT";
+            case "KEY_ALT_R": return "R ALT";
+            case "KEY_BRACKET_LEFT": return "[";
+            case "KEY_BRACKET_RIGHT": return "]";
+            case "KEY_BACKSLASH": return "\\";
+            case "KEY_SLASH": return "/";
+            case "KEY_SEMICOLON": return ";";
+            case "KEY_COMMA": return ",";
+            case "KEY_PERIOD": return ".";
+            case "KEY_APOSTROPHE": return "'";
+            case "KEY_MINUS": return "-";
+            case "KEY_KP_ADD": return "+";
+            case "MOUSE_LEFT_BUTTON": return "MLB";
+            case "MOUSE_RIGHT_BUTTON": return "MRB";
+            case "MOUSE_MIDDLE_BUTTON": return "MMB";
+            case "KEY_UP": case "GAMEPAD_DPAD_UP": return "▲";
+            case "KEY_DOWN": case "GAMEPAD_DPAD_DOWN": return "▼";
+            case "KEY_LEFT": case "GAMEPAD_DPAD_LEFT": return "◀";
+            case "KEY_RIGHT": case "GAMEPAD_DPAD_RIGHT": return "▶";
+            default: break;
+        }
+        return b.replaceAll("^(MOUSE_|KEY_|GAMEPAD_)", "").replace("BUTTON_", "").replace("KP_", "NUMPAD ").replace("_", " ");
     }
 
     // ------------------------------------------------------------ binding -> engine key name
@@ -301,6 +350,12 @@ final class Shell {
         switch (b) {
             case "MOUSE_LEFT_BUTTON": return "Fire";
             case "MOUSE_RIGHT_BUTTON": return "Aim";
+            case "MOUSE_MIDDLE_BUTTON": return "MouseMiddle";
+            case "MOUSE_MOVE_LEFT": case "GAMEPAD_RIGHT_THUMB_LEFT": return "LookLeft";
+            case "MOUSE_MOVE_RIGHT": case "GAMEPAD_RIGHT_THUMB_RIGHT": return "LookRight";
+            case "MOUSE_MOVE_UP": case "GAMEPAD_RIGHT_THUMB_UP": return "LookUp";
+            case "MOUSE_MOVE_DOWN": case "GAMEPAD_RIGHT_THUMB_DOWN": return "LookDown";
+            case "MOUSE_SCROLL_UP": case "MOUSE_SCROLL_DOWN": return null;
             case "GAMEPAD_BUTTON_R2": return car ? "KeyW" : "Fire";
             case "GAMEPAD_BUTTON_L2": return car ? "KeyS" : "Aim";
             case "GAMEPAD_BUTTON_A": return "Enter";
@@ -323,29 +378,145 @@ final class Shell {
             case "GAMEPAD_LEFT_THUMB_RIGHT": return "KeyD";
             default: break;
         }
-        if (b.startsWith("KEY_")) {
-            String k = b.substring(4);
-            if (k.length() == 1 && Character.isLetter(k.charAt(0))) return "Key" + k.toUpperCase(Locale.US);
-            if (k.length() == 1 && Character.isDigit(k.charAt(0))) return "Digit" + k;
-            if (k.matches("F\\d{1,2}")) return k;
-            switch (k) {
-                case "ALT_L": return "AltLeft";
-                case "BKSP": return "Backspace";
-                case "CTRL_L": return "ControlLeft";
-                case "DEL": return "Delete";
-                case "ENTER": return "Enter";
-                case "ESC": return "Escape";
-                case "SHIFT_L": return "ShiftLeft";
-                case "SPACE": return "Space";
-                case "TAB": return "Tab";
-                case "UP": return "ArrowUp";
-                case "DOWN": return "ArrowDown";
-                case "LEFT": return "ArrowLeft";
-                case "RIGHT": return "ArrowRight";
-                default: return null;
+        if (!b.startsWith("KEY_")) return null;
+        String k = b.substring(4);
+        if (k.length() == 1 && Character.isLetter(k.charAt(0))) return "Key" + k.toUpperCase(Locale.US);
+        if (k.length() == 1 && Character.isDigit(k.charAt(0))) return "Digit" + k;
+        if (k.matches("F\\d{1,2}")) return k;
+        if (k.matches("KP_\\d")) return "Numpad" + k.substring(3);
+        switch (k) {
+            case "ALT_L": return "AltLeft";
+            case "ALT_R": return "AltRight";
+            case "BKSP": return "Backspace";
+            case "CTRL_L": return "ControlLeft";
+            case "CTRL_R": return "ControlRight";
+            case "SHIFT_L": return "ShiftLeft";
+            case "SHIFT_R": return "ShiftRight";
+            case "DEL": return "Delete";
+            case "INSERT": return "Insert";
+            case "HOME": return "Home";
+            case "END": return "End";
+            case "PG_UP": return "PageUp";
+            case "PG_DOWN": return "PageDown";
+            case "PRTSCN": return "PrintScreen";
+            case "CAPS_LOCK": return "CapsLock";
+            case "NUM_LOCK": return "NumLock";
+            case "ENTER": return "Enter";
+            case "ESC": return "Escape";
+            case "SPACE": return "Space";
+            case "TAB": return "Tab";
+            case "UP": return "ArrowUp";
+            case "DOWN": return "ArrowDown";
+            case "LEFT": return "ArrowLeft";
+            case "RIGHT": return "ArrowRight";
+            case "BRACKET_LEFT": return "BracketLeft";
+            case "BRACKET_RIGHT": return "BracketRight";
+            case "BACKSLASH": return "Backslash";
+            case "SLASH": return "Slash";
+            case "SEMICOLON": return "Semicolon";
+            case "COMMA": return "Comma";
+            case "PERIOD": return "Period";
+            case "APOSTROPHE": return "Quote";
+            case "MINUS": return "Minus";
+            case "KP_ADD": return "NumpadAdd";
+            default: return null;
+        }
+    }
+
+    // ------------------------------------------------------------ finding the game anywhere
+    /** Turns a folder picked with the system picker (tree URI) into a real path, or null. */
+    static File treeToFile(android.net.Uri tree) {
+        try {
+            String id = android.provider.DocumentsContract.getTreeDocumentId(tree);
+            int colon = id.indexOf(':');
+            String vol = colon >= 0 ? id.substring(0, colon) : id, rest = colon >= 0 ? id.substring(colon + 1) : "";
+            File base = vol.equalsIgnoreCase("primary") ? Environment.getExternalStorageDirectory() : new File("/storage/" + vol);
+            return rest.isEmpty() ? base : new File(base, rest);
+        } catch (Exception e) { return null; }
+    }
+
+    /** A valid game root has data/manifest.json and b/<build>/{game.wasm, shaders/index.json}. */
+    static boolean validRoot(File dir) {
+        if (!new File(dir, "data/manifest.json").isFile()) return false;
+        File[] builds = new File(dir, "b").listFiles();
+        if (builds != null) for (File build : builds) {
+            if (new File(build, "game.wasm").isFile() && new File(build, "shaders/index.json").isFile()) return true;
+        }
+        return false;
+    }
+
+    interface Progress { boolean tick(int foldersScanned, String where); }
+
+    /** Breadth-first search for a game root under start. Return false from the callback to cancel. */
+    static File findGame(File start, int maxDepth, Progress progress) {
+        if (start == null || !start.isDirectory()) return null;
+        ArrayDeque<File> queue = new ArrayDeque<>();
+        ArrayDeque<Integer> depth = new ArrayDeque<>();
+        queue.add(start); depth.add(0);
+        int scanned = 0;
+        while (!queue.isEmpty()) {
+            File dir = queue.removeFirst(); int d = depth.removeFirst();
+            scanned++;
+            if (progress != null && scanned % 40 == 0 && !progress.tick(scanned, dir.getAbsolutePath())) return null;
+            if (validRoot(dir)) return dir;
+            if (d >= maxDepth) continue;
+            File[] kids = dir.listFiles(File::isDirectory);
+            if (kids == null) continue;
+            Arrays.sort(kids);
+            for (File kid : kids) {
+                String name = kid.getName();
+                if (name.startsWith(".") || name.equals("data") || name.equals("b") || name.equals("runtime") || (d == 0 && name.equals("Android"))) continue;
+                queue.add(kid); depth.add(d + 1);
             }
         }
         return null;
     }
 
+    /** Every storage root on the phone: internal storage first, then SD cards / USB drives. */
+    static List<File> storageRoots() {
+        List<File> roots = new ArrayList<>();
+        roots.add(Environment.getExternalStorageDirectory());
+        File[] vols = new File("/storage").listFiles();
+        if (vols != null) for (File v : vols) {
+            String n = v.getName();
+            if (!n.equals("emulated") && !n.equals("self") && v.isDirectory() && v.canRead()) roots.add(v);
+        }
+        return roots;
+    }
+
+    // ------------------------------------------------------------ device line
+    /** GPU name via a tiny offscreen OpenGL ES context (cached). Call off the main thread. */
+    static String gpuName(Context c) {
+        android.content.SharedPreferences p = c.getSharedPreferences("shell", Context.MODE_PRIVATE);
+        String cached = p.getString("gpu", null);
+        if (cached != null) return cached;
+        String name = "";
+        try {
+            android.opengl.EGLDisplay dpy = android.opengl.EGL14.eglGetDisplay(android.opengl.EGL14.EGL_DEFAULT_DISPLAY);
+            int[] ver = new int[2];
+            android.opengl.EGL14.eglInitialize(dpy, ver, 0, ver, 1);
+            int[] attr = {android.opengl.EGL14.EGL_RENDERABLE_TYPE, android.opengl.EGL14.EGL_OPENGL_ES2_BIT, android.opengl.EGL14.EGL_SURFACE_TYPE, android.opengl.EGL14.EGL_PBUFFER_BIT, android.opengl.EGL14.EGL_NONE};
+            android.opengl.EGLConfig[] cfg = new android.opengl.EGLConfig[1]; int[] n = new int[1];
+            android.opengl.EGL14.eglChooseConfig(dpy, attr, 0, cfg, 0, 1, n, 0);
+            android.opengl.EGLContext ctx = android.opengl.EGL14.eglCreateContext(dpy, cfg[0], android.opengl.EGL14.EGL_NO_CONTEXT, new int[]{android.opengl.EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, android.opengl.EGL14.EGL_NONE}, 0);
+            android.opengl.EGLSurface surf = android.opengl.EGL14.eglCreatePbufferSurface(dpy, cfg[0], new int[]{android.opengl.EGL14.EGL_WIDTH, 1, android.opengl.EGL14.EGL_HEIGHT, 1, android.opengl.EGL14.EGL_NONE}, 0);
+            android.opengl.EGL14.eglMakeCurrent(dpy, surf, surf, ctx);
+            String r = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER);
+            if (r != null) name = r.replace("(TM)", "").replaceAll("\\s+", " ").trim();
+            android.opengl.EGL14.eglMakeCurrent(dpy, android.opengl.EGL14.EGL_NO_SURFACE, android.opengl.EGL14.EGL_NO_SURFACE, android.opengl.EGL14.EGL_NO_CONTEXT);
+            android.opengl.EGL14.eglDestroySurface(dpy, surf);
+            android.opengl.EGL14.eglDestroyContext(dpy, ctx);
+            android.opengl.EGL14.eglTerminate(dpy);
+        } catch (Throwable ignored) { }
+        if (!name.isEmpty()) p.edit().putString("gpu", name).apply();
+        return name;
+    }
+
+    static String deviceLine(Context c, String version, String gpu) {
+        String soc = Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : Build.HARDWARE;
+        StringBuilder sb = new StringBuilder("v" + version + "  ·  " + Build.MODEL);
+        if (soc != null && !soc.isEmpty() && !soc.equalsIgnoreCase("unknown")) sb.append("  ·  ").append(soc);
+        if (gpu != null && !gpu.isEmpty()) sb.append("  ·  ").append(gpu);
+        return sb.toString();
+    }
 }
