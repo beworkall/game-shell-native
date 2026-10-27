@@ -24,7 +24,9 @@ fn android_main(app: AndroidApp) {
         }
     }
     if APP.set(app).is_err() {
-        return;
+        // The engine already ran in this process and cannot start twice. Exit so Android
+        // gives the next launch a fresh process instead of leaving a dead black screen.
+        std::process::exit(0);
     }
     if let Err(error) = crate::run() {
         fail(&format!("{error:#}"));

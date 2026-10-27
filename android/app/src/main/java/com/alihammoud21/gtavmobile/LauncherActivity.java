@@ -35,7 +35,7 @@ public final class LauncherActivity extends Activity {
     private static final String[] PAD_INPUTS = {"A", "B", "X", "Y", "L1", "R1", "L2", "R2", "L3", "R3", "START", "SELECT", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT"};
     private static final String[] HUD_NAMES = {"Off", "FPS", "Detailed + FPS graph"};
     private static final String SOURCE_URL = "https://github.com/beworkall/gtaappweb";
-    private static final String VERSION = "0.5";
+    private static final String VERSION = "0.5.1";
     private static final int P_HOME = 0, P_SETTINGS = 1, P_APP = 2, P_ABOUT = 3, P_WIZARD = 4, P_CONTROLS = 5;
 
     private Ui u;
@@ -105,6 +105,8 @@ public final class LauncherActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        // The launcher is on screen, so the game is not: clear out any game process Android kept alive.
+        killGameProcess(this);
         if (prefs().getBoolean("inGame", false)) {
             prefs().edit().putBoolean("inGame", false).apply();
             applyOverrides();
@@ -352,38 +354,43 @@ public final class LauncherActivity extends Activity {
         LinearLayout left = panes[0], right = panes[1];
         boolean land = u.landscape();
 
-        // ---- left: logo, device line, status, Play
+        // ---- left: logo, device line, status, Play, 2x2 actions
+        boolean compact = u.shortScreen();
         left.setGravity(Gravity.CENTER_HORIZONTAL);
-        left.addView(u.logo(land ? 1f : 0.72f));
-        deviceLine = u.text(Shell.deviceLine(this, VERSION, prefs().getString("gpu", "")), land ? 17 : 13, Ui.MUTED, false);
+        left.addView(u.logo(land ? (compact ? 0.6f : 0.8f) : 0.66f));
+        deviceLine = u.text(Shell.deviceLine(this, VERSION, prefs().getString("gpu", "")), 12, Ui.MUTED, false);
         deviceLine.setGravity(Gravity.CENTER);
-        deviceLine.setPadding(0, u.dp(10), 0, u.dp(12));
+        deviceLine.setSingleLine(); deviceLine.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        deviceLine.setPadding(0, u.dp(compact ? 6 : 10), 0, u.dp(compact ? 6 : 10));
         left.addView(deviceLine, new LinearLayout.LayoutParams(-1, -2));
         if (prefs().getString("gpu", "").isEmpty()) {
             new Thread(() -> { final String gpu = Shell.gpuName(getApplicationContext()); runOnUiThread(() -> { if (deviceLine != null) deviceLine.setText(Shell.deviceLine(this, VERSION, gpu)); }); }, "gpu").start();
         }
-        String msg;
-        if (g == null) msg = "No game yet. Add your game folder on the right.";
-        else if (!Shell.hasAccess()) msg = "File access is off. Allow it on the right, then press Play.";
-        else if (!ready(g)) msg = "Game folder not found. Choose it or scan your phone on the right.";
-        else msg = !pendingMessage.isEmpty() ? pendingMessage : "Ready.  " + g.optString("name", "GTA V") + "  ·  " + presetName(g) + " preset";
+        String msg; int kind;
+        if (g == null) { msg = "No game yet. Add your game folder."; kind = 1; }
+        else if (!Shell.hasAccess()) { msg = "File access is off. Allow it to play."; kind = 1; }
+        else if (!ready(g)) { msg = "Game folder not found. Choose it or scan your phone."; kind = 1; }
+        else { msg = !pendingMessage.isEmpty() ? pendingMessage : "Ready  \u00B7  " + g.optString("name", "GTA V") + "  \u00B7  " + presetName(g) + " preset"; kind = 0; }
         pendingMessage = "";
-        TextView status = u.text(msg, land ? 22 : 18, Ui.TEXT, false);
-        status.setGravity(Gravity.CENTER);
-        status.setPadding(u.dp(8), u.dp(4), u.dp(8), u.dp(8));
-        left.addView(status, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout st = u.status(msg, kind);
+        st.setGravity(Gravity.CENTER);
+        ((LinearLayout.LayoutParams) st.getChildAt(1).getLayoutParams()).weight = 0;
+        st.getChildAt(1).getLayoutParams().width = -2;
+        left.addView(st, new LinearLayout.LayoutParams(-1, -2));
         showCrashIfAny(left);
         File error = new File(getFilesDir(), "last-error.txt");
         if (error.isFile()) { left.addView(u.status("Game could not start: " + Shell.read(error), 2)); error.delete(); }
 
         LinearLayout buttons = u.column();
-        int side = land ? u.dp(24) : 0;
+        int side = land ? u.dp(8) : 0;
         buttons.setPadding(side, 0, side, 0);
-        Button play = u.hero("Play", () -> { if (g != null) play(index, false); else addGame(); });
-        buttons.addView(play);
-        buttons.addView(u.secondary("Game settings", R.drawable.ic_tune, () -> { if (g != null) showSettings(index); else addGame(); }));
-        buttons.addView(u.secondary("Controls", R.drawable.ic_sports_esports, this::showControls));
-        buttons.addView(u.split(u.secondary("App", R.drawable.ic_settings, this::showAppSettings), u.secondary("About", R.drawable.ic_info, this::showAbout)));
+        buttons.addView(u.hero("Play", () -> { if (g != null) play(index, false); else addGame(); }));
+        buttons.addView(u.split(
+            u.secondary("Settings", R.drawable.ic_tune, () -> { if (g != null) showSettings(index); else addGame(); }),
+            u.secondary("Controls", R.drawable.ic_sports_esports, this::showControls)));
+        buttons.addView(u.split(
+            u.secondary("App", R.drawable.ic_settings, this::showAppSettings),
+            u.secondary("About", R.drawable.ic_info, this::showAbout)));
         left.addView(buttons, new LinearLayout.LayoutParams(-1, -2));
 
         // ---- right: the game panel
@@ -391,52 +398,46 @@ public final class LauncherActivity extends Activity {
             ImageView iv = new ImageView(this);
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
             iv.setImageBitmap(BitmapFactory.decodeFile(coverFile(g).getAbsolutePath()));
-            iv.setBackground(u.round(Ui.SURFACE2, 18, 0));
+            iv.setBackground(u.round(Ui.SURFACE2, 14, 0));
             iv.setClipToOutline(true);
-            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-1, u.dp(150));
-            cl.bottomMargin = u.dp(14);
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-1, u.dp(compact ? 96 : 140));
+            cl.bottomMargin = u.dp(10);
             right.addView(iv, cl);
             iv.setOnLongClickListener(v -> { quickActions(index); return true; });
         }
-        right.addView(u.heading(g == null ? "Add your game" : "Your game"));
-        right.addView(u.body("Use your own extracted copy. The folder name doesn't matter: the app recognises the game by its files."));
+        LinearLayout head = u.row();
+        head.addView(u.heading(g == null ? "Add your game" : g.optString("name", "Your game")), new LinearLayout.LayoutParams(0, -2, 1f));
+        if (g != null) head.addView(u.pill(ready(g) ? "Ready" : "Setup", ready(g) ? Ui.OK : Ui.WARN));
+        right.addView(head);
         if (games.length() > 1) right.addView(gameSwitcher(games, s));
         if (g == null) {
+            right.addView(u.body("Use your own extracted copy. The folder name doesn't matter: the app recognises the game by its files."));
             right.addView(u.primary("Add game", R.drawable.ic_add, this::addGame));
-        } else {
-            boolean ok = ready(g);
-            right.addView(u.field("Game folder", g.optString("root").isEmpty() ? "Not selected" : g.optString("root")));
-            if (!Shell.hasAccess()) right.addView(u.primary("Allow file access", R.drawable.ic_folder_open, this::grantAccess));
-            right.addView(u.split(
-                u.secondary("Choose folder", R.drawable.ic_folder_open, () -> chooseFolder(index)),
-                u.secondary("Scan phone", R.drawable.ic_search, () -> locate(null, (r, f) -> applyFound(index, r, f)))));
-            statusRow = u.status(ok ? "Game files look right" : "Not ready yet", ok ? 0 : 1);
-            if (ok) {
-                String problem = Shell.buildProblem(this, new File(g.optString("root")));
-                if (problem != null) Ui.setStatus(statusRow, problem, 1);
-            }
-            right.addView(u.spacer(4));
-            right.addView(statusRow);
-            right.addView(u.field("Performance", presetName(g) + " preset"));
-            LinearLayout presets = u.row();
-            for (int i = 0; i < Shell.PRESET_NAMES.length; i++) {
-                final int pi = i;
-                Button b = g.optInt("preset", -1) == i
-                    ? u.primary(Shell.PRESET_NAMES[i], () -> { })
-                    : u.secondary(Shell.PRESET_NAMES[i], () -> { Shell.applyPreset(g, pi); putGame(index, g); u.buzz(1); showHome(); });
-                b.setTextSize(14); b.setPadding(u.dp(4), 0, u.dp(4), 0);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
-                if (i > 0) lp.leftMargin = u.dp(8);
-                presets.addView(b, lp);
-            }
-            right.addView(presets);
-            right.addView(u.field("Controls", profileLabel(g.optString("profile", Shell.BUILTIN))));
-            right.addView(u.field("Last played", ago(g.optLong("lastPlayed", 0)) + "   ·   backup " + ago(prefs().getLong("lastBackup", 0))));
-            right.addView(u.split(
-                u.secondary("Quick check", R.drawable.ic_fact_check, () -> verify(false)),
-                u.secondary("Back up", R.drawable.ic_backup, () -> setStatus(Shell.backupSaves(this), 0))));
-            right.addView(u.secondary("More: cover, add game, remove", R.drawable.ic_layers, () -> quickActions(index)));
+            return;
         }
+        boolean ok = ready(g);
+        right.addView(u.info("Folder", g.optString("root").isEmpty() ? "Not selected" : g.optString("root")));
+        statusRow = u.status(ok ? "Game files look right" : "Not ready yet", ok ? 0 : 1);
+        if (ok) {
+            String problem = Shell.buildProblem(this, new File(g.optString("root")));
+            if (problem != null) Ui.setStatus(statusRow, problem, 1);
+        }
+        right.addView(statusRow);
+        if (!Shell.hasAccess()) right.addView(u.primary("Allow file access", R.drawable.ic_folder_open, this::grantAccess));
+        right.addView(u.split(
+            u.secondary("Choose", R.drawable.ic_folder_open, () -> chooseFolder(index)),
+            u.secondary("Scan phone", R.drawable.ic_search, () -> locate(null, (r, f) -> applyFound(index, r, f)))));
+        right.addView(u.divider());
+        right.addView(u.info("Performance", presetName(g)));
+        right.addView(u.segmented(Shell.PRESET_NAMES, g.optInt("preset", -1), pi -> { Shell.applyPreset(g, pi); putGame(index, g); u.buzz(1); showHome(); }));
+        right.addView(u.divider());
+        right.addView(u.info("Controls", profileLabel(g.optString("profile", Shell.BUILTIN))));
+        right.addView(u.info("Last played", ago(g.optLong("lastPlayed", 0))));
+        right.addView(u.info("Last backup", ago(prefs().getLong("lastBackup", 0))));
+        right.addView(u.split(
+            u.secondary("Check", R.drawable.ic_fact_check, () -> verify(false)),
+            u.secondary("Back up", R.drawable.ic_backup, () -> setStatus(Shell.backupSaves(this), 0)),
+            u.secondary("More", R.drawable.ic_layers, () -> quickActions(index))));
     }
 
     private View gameSwitcher(JSONArray games, int current) {
@@ -516,7 +517,7 @@ public final class LauncherActivity extends Activity {
         final String text = Shell.read(crash);
         LinearLayout c = u.card();
         c.addView(u.status("The app crashed last time", 2));
-        TextView t = u.body(text); t.setTextSize(10); t.setTextIsSelectable(true); t.setMaxLines(8);
+        TextView t = u.body(text); u.ts(t, 10); t.setTextIsSelectable(true); t.setMaxLines(8);
         c.addView(t);
         c.addView(u.split(
             u.secondary("Copy details", R.drawable.ic_content_copy, () -> { ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("crash", text)); toast("Copied"); }),
@@ -582,7 +583,7 @@ public final class LauncherActivity extends Activity {
         titles.addView(u.subtitle("Game settings"));
         top.addView(titles, new LinearLayout.LayoutParams(0, -2, 1f));
         Button playTop = u.primary("Play", R.drawable.ic_play_arrow, () -> { collect(); saveDraft(); play(editing, false); });
-        top.addView(playTop, new LinearLayout.LayoutParams(u.dp(150), -2));
+        top.addView(playTop, new LinearLayout.LayoutParams(u.dp(120), -2));
         p.addView(top);
 
         // ---- game
@@ -797,7 +798,7 @@ public final class LauncherActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar s) { u.buzz(0); }
         });
         TextView fsHelp = u.body("When the picture stops but sound keeps playing, the app offers a one-tap restart and saves a report.");
-        fsHelp.setTextSize(13);
+        u.ts(fsHelp, 12);
         sc.addView(fsHelp);
         p.addView(sc);
 
@@ -1024,12 +1025,28 @@ public final class LauncherActivity extends Activity {
             catch (IOException e) { all.append("(not bundled)"); }
             all.append("\n\n");
         }
-        TextView t = u.body(all.toString()); t.setTextSize(10); t.setPadding(u.dp(14), u.dp(14), u.dp(14), u.dp(14)); t.setTextIsSelectable(true);
+        TextView t = u.body(all.toString()); u.ts(t, 10); t.setPadding(u.dp(14), u.dp(14), u.dp(14), u.dp(14)); t.setTextIsSelectable(true);
         ScrollView sv = new ScrollView(this); sv.addView(t);
         new AlertDialog.Builder(this).setTitle("Licenses").setView(sv).setPositiveButton("Close", null).show();
     }
 
     // ================================================================ play
+    /** Kills a leftover :game process (same app, so this is allowed). Returns true if one was running. */
+    static boolean killGameProcess(Context c) {
+        boolean killed = false;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+            List<android.app.ActivityManager.RunningAppProcessInfo> list = am == null ? null : am.getRunningAppProcesses();
+            if (list != null) for (android.app.ActivityManager.RunningAppProcessInfo p : list) {
+                if (p.processName != null && p.processName.endsWith(":game") && p.pid != android.os.Process.myPid()) {
+                    android.os.Process.killProcess(p.pid);
+                    killed = true;
+                }
+            }
+        } catch (Exception ignored) { }
+        return killed;
+    }
+
     private void play(final int index, boolean skipChecks) {
         final JSONObject g = game(index);
         if (g == null) return;
@@ -1085,7 +1102,9 @@ public final class LauncherActivity extends Activity {
             Shell.write(new File(getFilesDir(), "active_profile.txt"), g.optString("profile", Shell.BUILTIN));
             Shell.backupProfiles(this);
             u.buzz(1);
-            startActivity(new Intent(this, GameActivity.class));
+            // Always start the game in a fresh process; wait a moment if an old one had to be killed.
+            if (killGameProcess(this)) new android.os.Handler(getMainLooper()).postDelayed(() -> startActivity(new Intent(this, GameActivity.class)), 700);
+            else startActivity(new Intent(this, GameActivity.class));
         } catch (Exception error) { toast("Could not start: " + error.getMessage()); u.buzz(2); }
     }
 }

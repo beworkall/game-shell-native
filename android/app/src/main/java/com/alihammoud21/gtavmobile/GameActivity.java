@@ -102,7 +102,22 @@ public final class GameActivity extends NativeActivity {
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
     // ================================================================ lifecycle
+    /** True once the native runtime has been started in this process. The runtime can only start once per process. */
+    private static boolean sStarted;
+    private boolean stale;
+
     @Override public void onCreate(Bundle state) {
+        if (sStarted) {
+            // This process already ran the game once (Android kept it alive). The engine can't start twice,
+            // so hand back to the launcher, which starts a fresh process.
+            stale = true;
+            super.onCreate(state);
+            try { startActivity(new Intent(this, LauncherActivity.class).putExtra("autoplay", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)); } catch (Exception ignored) { }
+            finish();
+            killSelf();
+            return;
+        }
+        sStarted = true;
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         // Keep Java input dispatch: winit otherwise consumes the native input queue
@@ -533,12 +548,25 @@ public final class GameActivity extends NativeActivity {
         Intent i = new Intent(this, LauncherActivity.class).putExtra("autoplay", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         startActivity(i);
         finish();
-        handler.postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 700);
+        killSelf();
     }
 
     private void exitGame() {
         finish();
-        handler.postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 700);
+        killSelf();
+    }
+
+    /** Ends the :game process right away. The launcher lives in the main process and is not affected. */
+    private static void killSelf() {
+        android.os.Process.killProcess(android.os.Process.myPid());
+        System.exit(0);
+    }
+
+    @Override protected void onDestroy() {
+        // However the game screen goes away (Exit, Home then reopening the app, recents, system),
+        // never leave a used engine behind: the next Play must get a brand-new process.
+        try { super.onDestroy(); } catch (Throwable ignored) { }
+        killSelf();
     }
 
     @Override public void onBackPressed() { showMenu(); }

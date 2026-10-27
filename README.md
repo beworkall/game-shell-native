@@ -43,3 +43,7 @@ See NOTICE.md for credits and the list of changes.
 - New **Controls** page: Use / Edit / Copy layouts, New, Import .icp.
 - Layout editor rebuilt to match Winlator: draggable floating toolbox, element sheet (type, shape, keyboard/mouse/gamepad bindings, scale, opacity, toggle, mouse-move, text, icons, range keys, radial slots), grid snap, autosave.
 - New original app icon.
+
+## v0.5.1 fixes
+- Fixed: playing a second time without force-stopping the app gave a dead/black game. The game process is now always ended when you leave it, and every Play starts a fresh one.
+- Responsive UI: all sizes scale with the real screen size, the system font scale is capped, pages have a max width on big screens, and controls are slimmer (2×2 home buttons, segmented preset picker, compact info rows).
