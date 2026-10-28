@@ -12,7 +12,7 @@
 
 <p align="center">
   <b>A native Android runtime for heavy WebGPU / WebAssembly games.</b><br>
-  No browser, no WebView: the game runs on Wasmtime + wgpu (Vulkan) with a launcher, Winlator-style touch controls and full gamepad support.<br>
+  No browser, no WebView: the game runs on Wasmtime + wgpu (Vulkan) with a launcher, Winlator-style touch controls and full gamepad support.Tested Game [Grand Theft Auto 5]<br>
   <sub>Bring your own files: the app contains no game data and downloads nothing.</sub>
 </p>
 
