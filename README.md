@@ -166,4 +166,4 @@ changes are in [NOTICE.md](NOTICE.md), and every version is listed in [CHANGELOG
 > Theft Auto and related marks belong to their owners. The repository and the app contain no game code or assets,
 > and you are responsible for having the right to use any game files you load. This is a private, non-commercial project.
 
-<p align="center"><sub>Made by <b>beworkall</b> · Pakistan</sub></p>
+<p align="center"><sub>Made by <b>beworkall</b> · Ayyaz</sub></p>
