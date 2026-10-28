@@ -21,7 +21,7 @@ export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,-z,max-page
 if [ "$MODE" = --native-only ]; then
     cargo build --locked --release --target aarch64-linux-android --lib
     mkdir -p android/app/src/main/jniLibs/arm64-v8a
-    cp target/aarch64-linux-android/release/libgtav_mobile.so android/app/src/main/jniLibs/arm64-v8a/
+    cp target/aarch64-linux-android/release/libgame_shell_native.so android/app/src/main/jniLibs/arm64-v8a/
     exit 0
 fi
 if [ -z "${JAVA_HOME:-}" ] && [ -d /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home ]; then
@@ -32,9 +32,9 @@ TASK=assembleDebug
 ./android/gradlew -p android "$TASK"
 mkdir -p build
 if [ "$MODE" = release ]; then
-    cp android/app/build/outputs/apk/release/app-release-unsigned.apk build/gtav-mobile-unsigned.apk
-    echo "Built build/gtav-mobile-unsigned.apk (sign it with your release key before installing)."
+    cp android/app/build/outputs/apk/release/app-release-unsigned.apk build/GameShellNative-unsigned.apk
+    echo "Built build/GameShellNative-unsigned.apk (sign it with your release key before installing)."
 else
-    cp android/app/build/outputs/apk/debug/app-debug.apk build/gtav-mobile-debug.apk
-    echo "Built build/gtav-mobile-debug.apk"
+    cp android/app/build/outputs/apk/debug/app-debug.apk build/GameShellNative-debug.apk
+    echo "Built build/GameShellNative-debug.apk"
 fi

@@ -2,13 +2,13 @@
 # Constantin Clerc (c22dev) - 0.1
 
 [package]
-name = "gtav-mobile"
+name = "game-shell-native"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.98.1"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/alihammoud21/gtav-mobile"
-description = "Native game runtime for iOS, Android and macOS"
+repository = "https://github.com/beworkall/game-shell-native"
+description = "Native Android runtime for your own WebGPU/WebAssembly game files"
 
 [lib]
 crate-type = ["rlib", "cdylib"]

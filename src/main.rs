@@ -1,3 +1,3 @@
 fn main() -> anyhow::Result<()> {
-    gtav_mobile::run()
+    game_shell_native::run()
 }

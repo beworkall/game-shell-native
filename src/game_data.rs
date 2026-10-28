@@ -8,7 +8,7 @@ use std::{
     path::Path,
 };
 
-pub const MANIFEST: &str = include_str!("../distribution/game-manifest.json");
+pub const MANIFEST: &str = include_str!("../android/app/src/main/assets/game-manifest.json");
 fn manifest() -> Value {
     serde_json::from_str(MANIFEST).expect("bundled game manifest")
 }

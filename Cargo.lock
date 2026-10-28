@@ -1038,7 +1038,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gtav-mobile"
+name = "game-shell-native"
 version = "0.1.0"
 dependencies = [
  "anyhow",

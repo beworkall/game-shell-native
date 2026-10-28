@@ -37,7 +37,7 @@ fn android_main(app: AndroidApp) {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_LauncherActivity_importGame(
+pub extern "system" fn Java_app_webgameshell_nativeshell_LauncherActivity_importGame(
     mut env: JNIEnv,
     _class: JClass,
     archive: JString,
@@ -60,7 +60,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_LauncherActivity_importG
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeKey(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeKey(
     mut env: JNIEnv,
     _class: JClass,
     name: JString,
@@ -91,7 +91,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeKey(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeLook(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeLook(
     _env: JNIEnv,
     _class: JClass,
     dx: jfloat,
@@ -107,7 +107,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeLook(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeButton(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeButton(
     _env: JNIEnv,
     _class: JClass,
     button: jint,
@@ -121,7 +121,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeButto
 /// Key press that also types a character into the game's text input (on-screen and hardware keyboards,
 /// cheat console, text boxes). Game Shell Native.
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeKeyText(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeKeyText(
     mut env: JNIEnv,
     _class: JClass,
     name: JString,
@@ -152,7 +152,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeKeyTe
 
 /// Total frames presented so far; the Java HUD turns this into FPS (Game Shell Native).
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativePresents(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativePresents(
     _env: JNIEnv,
     _class: JClass,
 ) -> jlong {
@@ -161,7 +161,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativePrese
 
 /// Live audio mute from the in-game menu (Game Shell Native).
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeMute(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeMute(
     _env: JNIEnv,
     _class: JClass,
     mute: jboolean,
@@ -170,7 +170,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeMute(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeRelease(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeRelease(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -189,7 +189,7 @@ pub fn release_input() {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeInVehicle(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeInVehicle(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -197,7 +197,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeInVeh
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeHorn(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeHorn(
     _env: JNIEnv,
     _class: JClass,
     down: jboolean,
@@ -214,7 +214,7 @@ pub fn fail(message: &str) -> ! {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeLoading(
+pub extern "system" fn Java_app_webgameshell_nativeshell_GameActivity_nativeLoading(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -222,7 +222,7 @@ pub extern "system" fn Java_com_alihammoud21_gtavmobile_GameActivity_nativeLoadi
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_alihammoud21_gtavmobile_LauncherActivity_gameSetup(
+pub extern "system" fn Java_app_webgameshell_nativeshell_LauncherActivity_gameSetup(
     mut env: JNIEnv,
     _class: JClass,
     destination: JString,

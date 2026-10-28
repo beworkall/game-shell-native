@@ -1,72 +1,40 @@
-# Install GTAV Mobile
+# Installing and setting up
 
-Get the APK, IPA, or desktop bundle from [Releases](https://github.com/alihammoud21/gtav-mobile/releases).
-This is an experimental alpha; gameplay on physical phones has not been verified.
+## 1. Install the app
+1. Open the repository's **Releases** page and download `GameShellNative.apk` from the latest release.
+2. Open the file on your phone. If Android asks, allow "Install unknown apps" for your browser or file manager.
+3. Updates: install the new APK over the old one. Your settings, layouts and saves are kept.
 
-## Android
+> Upgrading from a debug build (before v0.5.3)? Uninstall the old app once. Saves and layouts come back
+> automatically from `Documents/GTA5NativeData`.
 
-Open **gtav-mobile-android.apk** on your phone and allow installation when asked.
-For USB installation, extract the desktop bundle, enable USB debugging, connect
-one unlocked phone, and run `Install-Android.cmd` (Windows) or
-`Install-Android.command` (Mac). The helper uses Google's
-[Platform-Tools](https://developer.android.com/tools/releases/platform-tools);
-extract `platform-tools` beside it if needed.
+## 2. Prepare your game folder
+You need your own extracted copy of the browser build `8b0b5899ed`. The app doesn't download or link to game files.
+The folder must contain:
 
-Requires Android 9+, ARM64 and Vulkan 1.1. First launch compiles the game;
-allow several minutes. Minimum RAM and compatible devices are not yet measured.
+```
+data/manifest.json
+b/8b0b5899ed/game.wasm
+shaders/index.json
+```
 
-## iOS
+It can have any name and be anywhere on the phone (internal storage, Download, SD card).
+You need about 17 GB free.
 
-Download **gtav-mobile-mac-usb.zip** on your Mac and extract the whole folder.
-It includes the compiled game and a ready-to-open Xcode project.
+## 3. Setup wizard
+1. **Allow file access** (Android's "All files access" screen opens; switch it on and come back).
+2. **Find your game:** **Choose folder** opens the Android folder picker, and **Scan phone** searches all storage.
+3. **Tune it:** pick a preset (the recommended one is marked for your phone) and a touch layout.
+4. Press **PLAY**. The first launch compiles shaders for your GPU and takes a few minutes.
 
-1. Install Xcode 26+ from the Mac App Store. Open it once and install iOS platform support.
-2. Connect your unlocked iPhone by USB, tap **Trust**, and enable **Developer Mode** if prompted.
-3. Open **Install-iPhone.command**. Alternatively, open `iOS-USB/GTAVMobile.xcodeproj` directly.
-4. In **Xcode → Settings → Accounts**, sign in with your Apple Account.
-5. Select the **GTAVMobile** target → **Signing & Capabilities**. Keep **Automatically manage signing** enabled, choose your **Personal Team**, and replace `yourname` in the bundle identifier with your own unique name.
-6. Select your connected iPhone in Xcode's top toolbar and choose **Product → Run** (`⌘R`). Xcode signs, installs and launches the app over USB.
+## 4. Check your files (optional)
+**Settings → Quick check** compares sizes; **Full verify** checks every SHA-256 hash.
+Results go to `Downloads/GameShell-verify.txt`, including which original archive part a bad file came from.
 
-If iOS asks, trust your developer identity in **Settings → General → VPN & Device Management**.
-The game is already compiled; Rust and XcodeGen are not required for this download.
-Xcode still needs internet access to create or refresh your signing profile.
-
-Free Personal Team profiles [expire after seven days](https://developer.apple.com/help/account/basics/about-your-developer-account).
-The app stays installed but stops opening until you reconnect and **Run** again.
-Keep the same Apple account, team and bundle identifier, and **do not delete the app**
-when refreshing; reinstalling the same app preserves its data. Save the extracted
-project so you can repeat this each week.
-
-Requires a Mac, Xcode, iOS 15+, and a compatible high-memory phone; the original
-runtime recommends 8 GB RAM. Free signing does not grant the increased-memory
-entitlement, so device memory limits can prevent gameplay. Development-signed USB installation has been verified on one physical iPhone.
-Gameplay and weekly signature renewal remain unverified. This USB flow is available on Mac.
-
-Apple's [device run guide](https://help.apple.com/xcode/mac/current/en.lproj/dev5a825a1ca.html)
-explains device pairing and signing. The separate IPA is the precompiled input
-used by the included project; the **Mac USB bundle** is the complete installation download.
-
-## First launch
-
-Tap **Download game**, use Wi-Fi, and keep the app open. Setup downloads about
-17 GB from your maintainer's [playgta5 release](https://github.com/alihammoud21/playgta5/releases/tag/full-game-v1)
-and installs about 16 GB. Allow at least 19 GB free, plus Android's compilation
-cache. Downloads and extracted files are checked against pinned SHA-256 hashes.
-If interrupted, tap the button again; completed parts are preserved.
-
-Tap **Play** after setup. Single-player data is then available offline.
-Uninstalling removes private game files and saves. Manual import of a complete,
-matching game ZIP remains available; the separate download parts are handled
-by **Download game**, not the manual importer.
-
-The desktop bundle includes both apps and the USB helpers. Game data is fetched
-on the phone, so this is not a fully offline installer. Checksums for all release
-assets are in `SHA256SUMS.txt`. See [game data](../GAME-DATA.md) for the pinned source.
-
-## Ad-hoc signature error in alpha.2
-
-Alpha.2 could restore the executable with its original ad-hoc signature on a repeated Run
-while Xcode reused an earlier signing result. Alpha.3 fixes the build dependency
-so replacing the game executable always triggers signing. Download the current
-Mac USB bundle and retain your existing team and bundle identifier when opening
-its project. You do not need to delete the installed app or its game data.
+## Where things are stored
+| What | Where |
+|---|---|
+| Game files | Your folder, read in place |
+| Settings, compile cache | App storage (removed on uninstall) |
+| Save backups, layout backups, freeze reports | `Documents/GTA5NativeData` (kept after uninstall) |
+| Exported log | `Downloads/GameShell-runtime.log` |

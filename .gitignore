@@ -1,15 +1,10 @@
 /target
 /build
-/ios/*.xcodeproj
-xcuserdata/
-DerivedData/
-*.xcworkspace
 .DS_Store
 .vscode/
 .idea/
 
 *.zip
-*.ipa
 *.wasm
 *.cwasm
 *.rpf
@@ -34,7 +29,6 @@ __pycache__/
 *.p12
 *.password
 
-# signing keys never go in the repo
-*.jks
-*.keystore
+# signing material never goes in the repo
 keystore-base64.txt
+password.txt

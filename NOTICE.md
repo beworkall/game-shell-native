@@ -25,7 +25,7 @@ android/gradle/LICENSE. Other dependencies retain their respective licenses.
 
 The mobile release integrates game code and downloads matching data from
 alihammoud21/playgta5. These assets are separate from the GPL-licensed runtime;
-see GAME-DATA.md. GTA V and associated marks belong to their respective owners.
+upstream's GAME-DATA.md is not part of this fork. GTA V and associated marks belong to their respective owners.
 
 ## Game Shell Native modifications (2026-10-24)
 
@@ -68,3 +68,16 @@ nativeKeyText (src/android.rs) so on-screen and hardware keyboards type text int
 - Interface icons: Material Icons by Google, Apache License 2.0 (assets/icons/MaterialIcons-Apache-2.0.txt), converted to Android vector drawables.
 - Control icons (assets/icons/0-17.png) and the "GTA 5 (Winlator)" profile come from Winlator by brunodev85, LGPL-2.1 (assets/icons/LGPL-2.1.txt). The editor's design follows Winlator's InputControlsView / ControlsEditorActivity.
 - App icon: original artwork; contains no Rockstar logos or game art.
+
+## Game Shell Native v0.5.1 - v0.5.3 (2026-10-27 / 2026-10-28)
+- v0.5.1: the :game process is always ended when the game screen closes, and the launcher clears any leftover
+  game process before Play; src/android.rs now exits instead of returning when the runtime was already started
+  in the process. Responsive sizing in Ui.java.
+- v0.5.2: window-inset handling (edge-to-edge), button-row spacing, centred button icons.
+- v0.5.3: renamed the project to game-shell-native (Java package app.webgameshell.nativeshell, crate
+  game-shell-native, library libgame_shell_native.so; JNI symbol names updated in src/android.rs). build.rs is
+  Android-only. Removed the upstream iOS/macOS projects (ios/, launcher/, make-ios.sh, make-app.sh, build.sh,
+  build.command), the PC/iPhone installers (distribution/), the game downloader and release scripts (scripts/), the
+  installer tests (tests/) and GAME-DATA.md / docs/VALIDATION.md. The game manifest now lives only in
+  android/app/src/main/assets/game-manifest.json (hashes and sizes only, no source location).
+  CI builds signed releases and publishes GitHub Releases for v* tags.

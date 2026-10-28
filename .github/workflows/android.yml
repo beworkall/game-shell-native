@@ -46,7 +46,7 @@ jobs:
             ./make-android.sh release
             printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
             BT="$ANDROID_HOME/build-tools/35.0.0"
-            "$BT/zipalign" -P 16 -f 4 build/gtav-mobile-unsigned.apk build/aligned.apk
+            "$BT/zipalign" -P 16 -f 4 build/GameShellNative-unsigned.apk build/aligned.apk
             "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-key-alias shell \
               --ks-pass env:KS_PASS --key-pass env:KS_PASS --out build/GameShellNative.apk build/aligned.apk
             "$BT/apksigner" verify --print-certs build/GameShellNative.apk
@@ -55,7 +55,7 @@ jobs:
           else
             echo "::warning::No signing secrets set - building a debug APK (updates may need an uninstall)."
             ./make-android.sh
-            cp build/gtav-mobile-debug.apk build/GameShellNative.apk
+            cp build/GameShellNative-debug.apk build/GameShellNative.apk
             echo "SIGNED=no" >> "$GITHUB_ENV"
           fi
       - uses: actions/upload-artifact@v4
