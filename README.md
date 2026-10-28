@@ -35,7 +35,7 @@
 ## Why
 Running a 16 GB WebGPU game in mobile Chrome works, but the browser costs heat, memory and frames.
 Game Shell Native runs the same WebAssembly build **natively**: Wasmtime executes the code, wgpu drives Vulkan
-directly, and a small Android launcher handles setup, settings and controls. The APK is about 9 MB; the game stays
+directly, and a small Android launcher handles setup, settings and controls. The APK is about 22 MB; the game stays
 in its own folder on your phone and is read in place (no second copy).
 
 ## Features
