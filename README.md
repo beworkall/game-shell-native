@@ -69,8 +69,10 @@ in its own folder on your phone and is read in place (no second copy).
 > backed up in `Documents/GTA5NativeData` and are restored automatically.
 
 ## Your game files
-The app does **not** include, download or link to any game files. You need your own extracted copy of the
-**browser build `8b0b5899ed`** of the game. Once extracted, the folder looks like this:
+The app does not include, download or link to any game files. You can download the complete
+browser build 8b0b5899ed of the game as 14 parts from
+https://github.com/alihammoud21/playgta5/releases/tag/full-game-v1.
+Download every playgta5-part-*-of-14.zip, extract all of them into the same folder, and the game is ready to play. Once extracted, the folder looks like this:
 
 ```
 <any folder name>/
