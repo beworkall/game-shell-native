@@ -35,7 +35,7 @@ public final class LauncherActivity extends Activity {
     private static final String[] PAD_INPUTS = {"A", "B", "X", "Y", "L1", "R1", "L2", "R2", "L3", "R3", "START", "SELECT", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT"};
     private static final String[] HUD_NAMES = {"Off", "FPS", "Detailed + FPS graph"};
     private static final String SOURCE_URL = "https://github.com/beworkall/gtaappweb";
-    private static final String VERSION = "0.5.1";
+    private static final String VERSION = "0.5.2";
     private static final int P_HOME = 0, P_SETTINGS = 1, P_APP = 2, P_ABOUT = 3, P_WIZARD = 4, P_CONTROLS = 5;
 
     private Ui u;

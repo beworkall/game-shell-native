@@ -197,8 +197,29 @@ final class Ui {
         ScrollView sv = scroll(col);
         sv.setBackgroundColor(BG);
         a.setContentView(sv);
+        fitInsets(sv);
         enter(col, c);
         return col;
+    }
+
+    /**
+     * Android 15+ draws apps edge to edge: pad the root by the status bar, navigation bar and camera
+     * cutout so nothing sits under the clock or the gesture bar.
+     */
+    static void fitInsets(View root) {
+        final int l = root.getPaddingLeft(), t = root.getPaddingTop(), r = root.getPaddingRight(), b = root.getPaddingBottom();
+        root.setOnApplyWindowInsetsListener((v, in) -> {
+            int il, it, ir, ib;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets s = in.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+                il = s.left; it = s.top; ir = s.right; ib = s.bottom;
+            } else {
+                il = in.getSystemWindowInsetLeft(); it = in.getSystemWindowInsetTop(); ir = in.getSystemWindowInsetRight(); ib = in.getSystemWindowInsetBottom();
+            }
+            v.setPadding(l + il, t + it, r + ir, b + ib);
+            return in;
+        });
+        root.requestApplyInsets();
     }
 
     /** Side padding that keeps content at most maxDp wide and centred, with at least 16dp gutters. */
@@ -228,6 +249,7 @@ final class Ui {
             rl.setMargins(dp(6), dp(12), dp(12 + wide), dp(12));
             root.addView(rs, rl);
             a.setContentView(root);
+            fitInsets(root);
             enter(left, c); enter(rs, c);
         } else {
             LinearLayout col = column();
@@ -239,9 +261,11 @@ final class Ui {
             LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
             rl.topMargin = dp(16);
             col.addView(right, rl);
+            col.setGravity(Gravity.CENTER_VERTICAL);   // balanced on tall screens instead of an empty bottom
             ScrollView sv = scroll(col);
             sv.setBackgroundColor(BG);
             a.setContentView(sv);
+            fitInsets(sv);
             enter(col, c);
         }
         return new LinearLayout[]{left, right};
@@ -419,6 +443,9 @@ final class Ui {
             if (i > 0) lp.leftMargin = dp(8);
             r.addView(views[i], lp);
         }
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2);
+        rp.topMargin = dp(8);
+        r.setLayoutParams(rp);
         return r;
     }
 
@@ -444,6 +471,20 @@ final class Ui {
         if (iconRes == 0) return;
         b.setCompoundDrawablesRelative(icon(iconRes, color, 18), null, null, null);
         b.setCompoundDrawablePadding(dp(8));
+        centerIcon(b);
+    }
+
+    /** Keeps the icon right next to the centred label instead of stuck to the left edge. */
+    private void centerIcon(final Button b) {
+        final int vt = b.getPaddingTop(), vb = b.getPaddingBottom(), min = dp(10);
+        b.addOnLayoutChangeListener((v, l, t, r, bt, ol, ot, or, ob) -> {
+            int w = r - l;
+            if (w <= 0) return;
+            Drawable d = b.getCompoundDrawablesRelative()[0];
+            float content = (d == null ? 0 : d.getBounds().width() + b.getCompoundDrawablePadding()) + b.getPaint().measureText(b.getText().toString());
+            int side = Math.max(min, (int) ((w - content) / 2f));
+            if (side != b.getPaddingLeft()) b.post(() -> b.setPadding(side, vt, side, vb));
+        });
     }
 
     Button primary(String label, Runnable action) { return primary(label, 0, action); }

@@ -47,3 +47,7 @@ See NOTICE.md for credits and the list of changes.
 ## v0.5.1 fixes
 - Fixed: playing a second time without force-stopping the app gave a dead/black game. The game process is now always ended when you leave it, and every Play starts a fresh one.
 - Responsive UI: all sizes scale with the real screen size, the system font scale is capped, pages have a max width on big screens, and controls are slimmer (2×2 home buttons, segmented preset picker, compact info rows).
+
+## v0.5.2 polish
+- Pages no longer draw under the status bar, camera cutout or gesture bar (Android 15+ edge-to-edge).
+- Gaps between button rows; icons sit next to their labels; portrait home is vertically centred.
