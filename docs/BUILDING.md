@@ -6,13 +6,11 @@ Everything builds in the cloud. The workflow is `.github/workflows/android.yml`.
 | You do | You get |
 |---|---|
 | Push to `main` | An APK under **Actions → run → Artifacts → `game-shell-native-apk`** (kept for 90 days). |
-| Push a tag `v*` (for example `v0.5.3`) | The same build **plus a GitHub Release** with `GameShellNative.apk` attached. |
+| Push to `main` with a **new `versionName`** in `android/app/build.gradle` | The same build **plus a GitHub Release** `v<version>` with `GameShellNative.apk` and notes taken from `CHANGELOG.md`. |
+| Push a tag `v*` | A release for that tag. |
 | **Actions → android-apk → Run workflow** | A manual build. |
 
-```sh
-git tag v0.5.3
-git push origin v0.5.3
-```
+To ship a version: bump `versionCode` and `versionName`, add a `## [x.y.z]` section to `CHANGELOG.md`, and push to `main`.
 
 The first build takes about 15 minutes (Rust + NDK). Later builds use the cache and take about 3 minutes.
 

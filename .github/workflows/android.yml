@@ -1,6 +1,7 @@
 name: android-apk
-# Push to main  -> builds the APK (download it from the run's Artifacts).
-# Push a tag v* -> builds it AND publishes a GitHub Release with the APK attached.
+# Push to main  -> builds the APK (Artifacts). If android/app/build.gradle has a new versionName, the signed APK is
+#                  also published as a GitHub Release with tag v<version> and notes from CHANGELOG.md.
+# Push a tag v* -> builds and publishes that release.
 # With the SIGNING_KEYSTORE_B64 + SIGNING_PASSWORD secrets set, the APK is a signed release build that
 # installs as an update over the previous version. Without them it falls back to a debug build.
 on:
@@ -63,11 +64,22 @@ jobs:
           name: game-shell-native-apk
           path: build/GameShellNative.apk
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        # A release is published automatically the first time a new versionName (android/app/build.gradle)
+        # reaches main with a signed build, or when a v* tag is pushed. Existing releases are never touched.
+        if: env.SIGNED == 'yes' || startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" build/GameShellNative.apk \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Game Shell Native $GITHUB_REF_NAME" \
-            --notes "Private build. Signed: $SIGNED. Contains no game files: point it at your own extracted game folder. See README.md for changes."
+          set -eu
+          VER=$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" android/app/build.gradle | head -1)
+          TAG="v${VER%%-*}"
+          case "$GITHUB_REF" in refs/tags/v*) TAG="$GITHUB_REF_NAME" ;; esac
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - nothing to publish."; exit 0
+          fi
+          NOTES=$(awk -v v="${TAG#v}" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {if (f) exit} f' CHANGELOG.md)
+          [ -n "$NOTES" ] || NOTES="See CHANGELOG.md."
+          printf '%s\n\n---\n**Install:** download `GameShellNative.apk` below and open it on your phone. Signed: %s. Updates install over the previous version.\n\nContains no game files: point it at your own extracted game folder (see README).\n' "$NOTES" "$SIGNED" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" build/GameShellNative.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Game Shell Native $TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest
