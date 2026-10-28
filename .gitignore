@@ -33,3 +33,8 @@ __pycache__/
 
 *.p12
 *.password
+
+# signing keys never go in the repo
+*.jks
+*.keystore
+keystore-base64.txt
